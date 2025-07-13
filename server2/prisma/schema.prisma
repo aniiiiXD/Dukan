@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model Cart {
+  id        String     @id  @default(uuid())
+  userId    String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime
+  User      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  CartItem  CartItem[]
+
+  @@index([userId])
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  addedAt   DateTime @default(now())
+  Cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([productId])
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  userId          String
+  createdAt       DateTime    @default(now())
+  shippingAddress String
+  status          OrderStatus @default(pending)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  sellerId        String
+  User            User        @relation(fields: [userId], references: [id])
+  OrderItem       OrderItem[]
+
+  @@index([createdAt])
+  @@index([sellerId])
+  @@index([status])
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  Order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  Product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  name          String
+  description   String?
+  category      Category
+  imageUrl      String?
+  createdAt     DateTime    @default(now())
+  isActive      Boolean     @default(true)
+  price         Decimal     @db.Decimal(10, 2)
+  sellerId      String
+  stockQuantity Int         @default(0)
+  CartItem      CartItem[]
+  OrderItem     OrderItem[]
+  Seller        Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([isActive])
+  @@index([sellerId])
+}
+
+model Seller {
+  id           String    @id @default(uuid())
+  createdAt    DateTime  @default(now())
+  email        String    @unique
+  phoneNumber  String?
+  password     String
+  businessName String
+  Product      Product[]
+
+  @@index([email])
+}
+
+model User {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  email       String   @unique
+  phoneNumber String?
+  password    String
+  address     String?
+  Cart        Cart?
+  Order       Order[]
+
+  @@index([email])
+}
+
+enum Category {
+  lehenga
+  saree
+  kurti
+  dupatta
+  jewelry
+  accessories
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  shipped
+  delivered
+  cancelled
+}
