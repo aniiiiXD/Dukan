@@ -170,6 +170,21 @@ async function getProductById(productId) {
 // Test call
 //getProductById("2a0e431f-d184-4431-876b-03a788933ac6");
 
+// Function to find products by name
+async function findProductsByName(name) {
+    return prisma.product.findMany({
+        where: {
+            name: {
+                contains: name,
+                mode: 'insensitive'
+            }
+        }
+    });
+}
+
+// Test call
+// findProductsByName("lehenga").then(products => console.log(products));
+
 
 async function addToCart(userId, productId, quantity = 1) {
   try {
@@ -218,7 +233,18 @@ async function addToCart(userId, productId, quantity = 1) {
       return updatedItem;
 
     } else {
-      // Step 4: If not, create a new CartItem
+      // Step 4: First check if product exists
+      const product = await prisma.product.findUnique({
+        where: {
+          id: productId
+        }
+      });
+
+      if (!product) {
+        throw new Error(`Product with ID ${productId} does not exist`);
+      }
+
+      // Step 5: Create new CartItem
       const newCartItem = await prisma.cartItem.create({
         data: {
           cartId: cart.id,
@@ -473,13 +499,83 @@ async function getOrderById(orderId) {
 //placeOrder( "5efcb0e3-0539-4370-88c0-39430e1facd6" ,"123 Test Lane");
 
 
+async function getAllProducts() {
+  const products = await prisma.product.findMany({
+    include: {
+      Seller: true
+    }
+  });
+  console.log(products);
+  return products;
+}
+
+// console.log(getAllProducts());
+
+async function signInUser(email, password) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        Cart: true,
+        Order: true
+      }
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Here you would typically compare the password with a hashed password
+    // For now, we're just checking if the passwords match
+    if (user.password !== password) {
+      throw new Error('Invalid password');
+    }
+
+    return user;
+  } catch (error) {
+    console.error('Signin error:', error);
+    throw error;
+  }
+}
+
+async function getCartCount(userId) {
+  try {
+    const cart = await prisma.cart.findMany({
+      where: {
+        userId,
+        order: null // Only count items not in an order
+      }
+    });
+    
+    return cart.reduce((total, item) => total + item.quantity, 0);
+  } catch (error) {
+    console.error('Error getting cart count:', error);
+    throw error;
+  }
+}
+
+async function signInSeller(email, password) {
+  const seller = await prisma.seller.findUnique({
+    where: { email: email }
+  });
+
+  if (!seller || seller.password !== password) {
+    return null;
+  }
+
+  return seller;
+}
+
 module.exports = {
   createUser,
   getUserById,
   createSeller,
+  findProductsByName,
   getSellerById,
   createProduct,
   getProductById,
+  getAllProducts,
+  signInUser,
   addToCart,
   removeFromCart,
   getCart,
@@ -487,9 +583,7 @@ module.exports = {
   updateOrderStatus,
   getSellerOrders,
   getUserOrders,
-  getOrderById
+  getOrderById,
+  signInSeller,
+  getCartCount
 };
-
-
-
-
