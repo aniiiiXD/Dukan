@@ -1,5 +1,5 @@
 const express = require("express");     
-const { getUserById, createUser, createSeller, getSellerById, createProduct, getProductById, addToCart, removeFromCart, getCart, placeOrder, updateOrderStatus, getSellerOrders, getUserOrders, getOrderById, signInUser, getAllProducts } = require("./client"); 
+const { getUserById, createUser, createSeller, getSellerById, createProduct, getProductById, addToCart, removeFromCart, getCart, placeOrder, updateOrderStatus, getSellerOrders, getUserOrders, getOrderById, signInUser, getAllProducts } = require("../client"); 
 const cors = require('cors');
 const app = express();
 const PORT = 3000; 
