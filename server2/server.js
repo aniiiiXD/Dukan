@@ -187,6 +187,8 @@ app.get("/api/v1/order/:id", async (req, res) => {
 
 
 
-app.listen(3000 , ()=> {
-    console.log("Server is starting boi")
-})
+module.exports = app ; 
+
+// app.listen(3000 , ()=> {
+//     console.log("Server is starting boi")
+// })
