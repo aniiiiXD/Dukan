@@ -14,7 +14,7 @@ interface ProductCardProps {
     isNew?: boolean;
   };
   onAddToCart?: (productId: string) => void;
-}
+} 
 
 const ProductCard = ({ product, onAddToCart }: ProductCardProps) => {
   const handleAddToCart = () => {

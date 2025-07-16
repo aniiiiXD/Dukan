@@ -37,7 +37,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
     
     setLoading(true);
     try {
-      const response = await axios.get(`http://localhost:3000/api/v1/cart/${user.id}`);
+      const response = await axios.get(`https://dukan-backend-preview.vercel.app/api/v1/cart/${user.id}`);
       const apiCart = response.data;
       
       // Transform API response to match expected format
@@ -72,7 +72,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
     if (!user) return;
  
     try {
-      await axios.delete("http://localhost:3000/api/v1/cart", {
+      await axios.delete("https://dukan-backend-preview.vercel.app/api/v1/cart", {
         data: {
           userId: user.id,
           productId: productId
@@ -100,7 +100,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
 
     try {
       // First remove the item
-      await axios.delete("http://localhost:3000/api/v1/cart", {
+      await axios.delete("https://dukan-backend-preview.vercel.app/api/v1/cart", {
         data: {
           userId: user.id,
           productId: productId
@@ -108,7 +108,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
       });
       
       // Then add it back with new quantity
-      await axios.post("http://localhost:3000/api/v1/cart", {
+      await axios.post("https://dukan-backend-preview.vercel.app/api/v1/cart", {
         userId: user.id,
         productId: productId,
         quantity: newQuantity
@@ -139,7 +139,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
 
     setOrderLoading(true);
     try {
-      const response = await axios.post("http://localhost:3000/api/v1/order", {
+      const response = await axios.post("https://dukan-backend-preview.vercel.app/api/v1/order", {
         userId: user.id,
         shippingAddress: shippingAddress
       });

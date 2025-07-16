@@ -29,13 +29,13 @@ const ProductGrid = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
 
   useEffect(() => {
     loadProducts();
-  }, []);
+  }, []);  
 
   const loadProducts = async () => {
     console.log("🔵 loadProducts called");
     setLoading(true);
     try {
-      const response = await axios.get("http://localhost:3000/api/v1/products");
+      const response = await axios.get("https://dukan-backend-preview.vercel.app/api/v1/products");
       const products = response.data;
       setProducts(products);
       console.log("✅ Products loaded successfully:", products.length);
@@ -74,7 +74,7 @@ const ProductGrid = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
       }
 
       // Add to cart using API endpoint
-      const response = await axios.post("http://localhost:3000/api/v1/cart", {
+      const response = await axios.post("https://dukan-backend-preview.vercel.app/api/v1/cart", {
         userId: user.id,
         productId: productId,
         quantity: 1

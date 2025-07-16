@@ -34,7 +34,7 @@ const LoginDialog = ({ isOpen, onClose, onUserChange }: LoginDialogProps) => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:3000/api/v1/user", {
+      const response = await axios.post("https://dukan-backend-preview.vercel.app/api/v1/user", {
         email: loginData.email,
         password: loginData.password
       });
@@ -67,7 +67,7 @@ const LoginDialog = ({ isOpen, onClose, onUserChange }: LoginDialogProps) => {
     setIsLoading(true);
     
     try {
-      const response = await axios.post("http://localhost:3000/api/v1/user", {
+      const response = await axios.post("https://dukan-backend-preview.vercel.app/api/v1/user", {
         email: registerData.email,
         password: registerData.password,
         phoneNumber: registerData.phoneNumber,
