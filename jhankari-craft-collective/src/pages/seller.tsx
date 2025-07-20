@@ -28,7 +28,7 @@ const Seller = () => {
     }));
   };
 
-  const BASE_URL = 'http://localhost:3000';
+  const BASE_URL = 'https://dukan-backend-preview.vercel.app/';
 
   const handleSellerSignup = async (e: React.FormEvent) => {
     e.preventDefault();
