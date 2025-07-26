@@ -1,17 +1,17 @@
 {
   "rewrites": [
     {
-      "source": "/seller/(.*)",   // <--- IMPORTANT: Route /seller and its sub-paths to your API
-      "destination": "/api"       // <--- Assumes your Express app is at the /api serverless function
+      "source": "/seller/(.*)",    
+      "destination": "/api"      
     },
     {
-      "source": "/(.*)",           // All other requests go to index.html for your SPA
+      "source": "/(.*)",           
       "destination": "/index.html"
     }
   ],
   "headers": [
     {
-      "source": "/seller/(.*)",   // Apply CORS headers ONLY to your /seller API routes
+      "source": "/seller/(.*)",   
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
