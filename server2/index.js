@@ -69,6 +69,120 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add to your server2/index.js
+
+// Create user with proper auth flow
+const createUser = async (userData) => {
+  try {
+    // Sign up user in Supabase Auth
+    const { data: authData, error: authError } = await supabaseAnon.auth.signUp(
+      {
+        email: userData.email,
+        password: userData.password,
+      }
+    );
+
+    if (authError) throw authError;
+
+    // The user profile will be automatically created via Supabase trigger
+    // or we can create it using service role
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .insert([
+        {
+          id: authData.user.id,
+          email: userData.email,
+          phone_number: userData.phoneNumber,
+          address: userData.address,
+        },
+      ])
+      .select()
+      .single();
+
+    if (profileError) throw profileError;
+
+    return profile;
+  } catch (error) {
+    console.error("Error creating user:", error);
+    throw error;
+  }
+};
+
+// Sign in user and return profile
+const signInUser = async (email, password) => {
+  try {
+    const { data: authData, error: authError } =
+      await supabaseAnon.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (authError) throw authError;
+
+    // Get user profile using service role
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", authData.user.id)
+      .single();
+
+    if (profileError) throw profileError;
+
+    return profile;
+  } catch (error) {
+    console.error("Error signing in user:", error);
+    throw error;
+  }
+};
+
+// Update other functions to use service role appropriately
+const addToCart = async (userId, productId, quantity = 1) => {
+  try {
+    // Check if item already exists
+    const { data: existing } = await supabase
+      .from("cart_items")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("product_id", productId)
+      .single();
+
+    if (existing) {
+      // Update existing item
+      const { data, error } = await supabase
+        .from("cart_items")
+        .update({
+          quantity: existing.quantity + quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("*, products(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    } else {
+      // Create new cart item
+      const { data, error } = await supabase
+        .from("cart_items")
+        .insert([
+          {
+            user_id: userId,
+            product_id: productId,
+            quantity: quantity,
+          },
+        ])
+        .select("*, products(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
+  } catch (error) {
+    console.error("Error adding to cart:", error);
+    throw error;
+  }
+};
+
 // Database functions
 const getAllProducts = async () => {
   try {
