@@ -2,32 +2,43 @@ import { useState, useEffect } from "react";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCurrentUser, getCartCount } from "@/lib/mockDatabase";
-import axios from 'axios';
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginDialog } from './LoginDialog';
+import { apiClient } from '@/config/api';
+
+interface CartItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  addedAt: string;
+  Product: {
+    id: string;
+    name: string;
+    price: number;
+    image_url: string;
+    stock_quantity: number;
+  };
+}
+
+interface Cart {
+  id: string;
+  userId: string;
+  CartItem: CartItem[];
+}
 
 const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [cart, setCart] = useState(null);
+  const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
   const [shippingAddress, setShippingAddress] = useState("");
-  const [user, setUser] = useState(null);
-  const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
-
-  useEffect(() => {
-    const currentUser = getCurrentUser();
-    setUser(currentUser);
-  }, [isOpen]);
-
-  console.log("🔵 CartDialog rendered");
+  const { toast } = useToast();
+  const { user, isAuthenticated } = useAuth();
 
   useEffect(() => {
     if (isOpen && user) {
@@ -36,34 +47,17 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   }, [isOpen, user]);
 
   const loadCart = async () => {
-    console.log("🔵 loadCart called");
     if (!user) return;
     
     setLoading(true);
     try {
-      const response = await axios.get(`https://dukan-backend-preview.vercel.app/api/v1/cart/${user.id}`);
-      const apiCart = response.data;
-      
-      // Transform API response to match expected format
-      const transformedCart = {
-        id: apiCart.id,
-        userId: apiCart.userId,
-        items: apiCart.CartItem.map(cartItem => ({
-          id: cartItem.id,
-          productId: cartItem.productId,
-          quantity: cartItem.quantity,
-          addedAt: cartItem.addedAt,
-          product: cartItem.Product
-        }))
-      };
-      
-      setCart(transformedCart);
-      console.log("✅ Cart loaded and transformed:", transformedCart);
+      const response = await apiClient.get(`/cart/${user.id}`);
+      setCart(response.data);
     } catch (error) {
       console.error("❌ Error loading cart:", error);
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to load cart.",
+        description: "Failed to load cart.",
         variant: "destructive",
       });
     } finally {
@@ -72,18 +66,19 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   };
 
   const handleRemoveItem = async (productId: string) => {
-    console.log("🔵 handleRemoveItem called with productId:", productId);
     if (!user) return;
  
     try {
-      await axios.delete("https://dukan-backend-preview.vercel.app/api/v1/cart", {
+      await apiClient.delete("/cart", {
         data: {
           userId: user.id,
           productId: productId
         }
       });
+      
       await loadCart();
       onCartUpdate?.();
+      
       toast({
         title: "Item removed",
         description: "Item has been removed from your cart.",
@@ -92,27 +87,26 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
       console.error("❌ Error removing item:", error);
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to remove item from cart.",
+        description: "Failed to remove item from cart.",
         variant: "destructive",
       });
     }
   };
 
   const handleUpdateQuantity = async (productId: string, newQuantity: number) => {
-    console.log("🔵 handleUpdateQuantity called with:", { productId, newQuantity });
     if (!user || newQuantity < 1) return;
 
     try {
-      // First remove the item
-      await axios.delete("https://dukan-backend-preview.vercel.app/api/v1/cart", {
+      // Remove the item first
+      await apiClient.delete("/cart", {
         data: {
           userId: user.id,
           productId: productId
         }
       });
       
-      // Then add it back with new quantity
-      await axios.post("https://dukan-backend-preview.vercel.app/api/v1/cart", {
+      // Add it back with new quantity
+      await apiClient.post("/cart", {
         userId: user.id,
         productId: productId,
         quantity: newQuantity
@@ -124,14 +118,13 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
       console.error("❌ Error updating quantity:", error);
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to update item quantity.",
+        description: "Failed to update item quantity.",
         variant: "destructive",
       });
     }
   };
 
   const handlePlaceOrder = async () => {
-    console.log("🔵 handlePlaceOrder called with address:", shippingAddress);
     if (!user || !shippingAddress.trim()) {
       toast({
         title: "Missing information",
@@ -143,26 +136,27 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
 
     setOrderLoading(true);
     try {
-      const response = await axios.post("https://dukan-backend-preview.vercel.app/api/v1/order", {
+      const response = await apiClient.post("/order", {
         userId: user.id,
         shippingAddress: shippingAddress
       });
-      const order = response.data;
-      console.log("✅ Order placed:", order);
       
-      // Clear cart after successful order
+      const order = response.data.order || response.data;
+      
       setCart(null);
       setIsOpen(false);
+      setShippingAddress("");
+      onCartUpdate?.();
       
       toast({
         title: "Order placed!",
-        description: "Your order has been placed successfully. Order ID: " + order.id,
+        description: `Your order has been placed successfully. Order ID: ${order.id}`,
       });
     } catch (error) {
       console.error("❌ Error placing order:", error);
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Failed to place order. Please try again.",
+        description: error.response?.data?.error || "Failed to place order. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -171,10 +165,9 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   };
 
   const calculateTotal = () => {
-    if (!cart?.items) return 0;
-    return cart.items.reduce((total, item) => {
-      // Convert price to number since it comes as string from API
-      const price = parseFloat(item.product?.price || '0');
+    if (!cart?.CartItem) return 0;
+    return cart.CartItem.reduce((total, item) => {
+      const price = parseFloat(item.Product?.price?.toString() || '0');
       return total + price * item.quantity;
     }, 0);
   };
@@ -184,11 +177,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
       setShowLoginDialog(true);
       return;
     }
-    processOrder();
-  };
-
-  const processOrder = () => {
-    // ... your existing checkout logic ...
+    handlePlaceOrder();
   };
 
   if (!user) {
@@ -204,7 +193,18 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
             <DialogTitle>Please Login</DialogTitle>
           </DialogHeader>
           <p className="text-muted-foreground">You need to be logged in to view your cart.</p>
+          <Button onClick={() => setShowLoginDialog(true)} className="w-full">
+            Login Now
+          </Button>
         </DialogContent>
+        
+        <LoginDialog
+          open={showLoginDialog}
+          onClose={() => setShowLoginDialog(false)}
+          onLoginSuccess={() => {
+            setShowLoginDialog(false);
+          }}
+        />
       </Dialog>
     );
   }
@@ -236,7 +236,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
               </div>
             ))}
           </div>
-        ) : !cart?.items || cart.items.length === 0 ? (
+        ) : !cart?.CartItem || cart.CartItem.length === 0 ? (
           <div className="text-center py-8">
             <ShoppingBag className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">Your cart is empty</h3>
@@ -249,18 +249,21 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
           <div className="space-y-6">
             {/* Cart Items */}
             <div className="space-y-4">
-              {cart.items.map((item) => (
+              {cart.CartItem.map((item) => (
                 <Card key={item.id} className="p-4">
                   <div className="flex gap-4">
                     <img
-                      src={item.product?.imageUrl || "/placeholder.jpg"}
-                      alt={item.product?.name}
+                      src={item.Product?.image_url || "/placeholder.jpg"}
+                      alt={item.Product?.name}
                       className="w-16 h-16 object-cover rounded"
                     />
                     <div className="flex-1">
-                      <h4 className="font-semibold line-clamp-2">{item.product?.name}</h4>
+                      <h4 className="font-semibold line-clamp-2">{item.Product?.name}</h4>
                       <p className="text-royal-crimson font-bold">
-                        ₹{(item.product?.price || 0).toLocaleString('en-IN')}
+                        ₹{(item.Product?.price || 0).toLocaleString('en-IN')}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Stock: {item.Product?.stock_quantity || 0}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -288,6 +291,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}
+                          disabled={item.quantity >= (item.Product?.stock_quantity || 0)}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -324,19 +328,20 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
                   onClick={handleCheckout}
                   disabled={orderLoading || !shippingAddress.trim()}
                 >
-                  {isAuthenticated ? 'Place Order' : 'Login & Place Order'}
+                  {orderLoading ? 'Placing Order...' : 'Place Order'}
                 </Button>
               </CardContent>
             </Card>
           </div>
         )}
       </DialogContent>
+      
       <LoginDialog
         open={showLoginDialog}
         onClose={() => setShowLoginDialog(false)}
         onLoginSuccess={() => {
           setShowLoginDialog(false);
-          processOrder();
+          handlePlaceOrder();
         }}
       />
     </Dialog>

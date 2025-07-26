@@ -1,3 +1,4 @@
+// components/LoginDialog.tsx
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,16 @@ export function LoginDialog({ open, onClose, onLoginSuccess }: LoginDialogProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!email.trim() || !password.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please enter both email and password.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     
     try {
@@ -27,7 +38,7 @@ export function LoginDialog({ open, onClose, onLoginSuccess }: LoginDialogProps)
       if (success) {
         toast({
           title: "Login successful",
-          description: "Welcome back! Proceeding with your order.",
+          description: "Welcome! You're now logged in.",
         });
         onLoginSuccess();
         setEmail('');
@@ -57,7 +68,7 @@ export function LoginDialog({ open, onClose, onLoginSuccess }: LoginDialogProps)
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-lg w-96">
         <h2 className="text-xl font-bold mb-2">Login to Continue</h2>
-        <p className="text-muted-foreground mb-4">Please login to complete your order</p>
+        <p className="text-muted-foreground mb-4">Please login to access your account</p>
         
         <div className="space-y-4">
           <div>
@@ -86,7 +97,13 @@ export function LoginDialog({ open, onClose, onLoginSuccess }: LoginDialogProps)
         </div>
         
         <div className="flex justify-between mt-6 gap-3">
-          <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={onClose} 
+            className="flex-1"
+            disabled={isLoading}
+          >
             Cancel
           </Button>
           <Button
@@ -95,9 +112,13 @@ export function LoginDialog({ open, onClose, onLoginSuccess }: LoginDialogProps)
             className="flex-1"
             disabled={isLoading}
           >
-            {isLoading ? 'Logging in...' : 'Login & Continue'}
+            {isLoading ? 'Logging in...' : 'Login'}
           </Button>
         </div>
+        
+        <p className="text-xs text-muted-foreground mt-4 text-center">
+          New users will be automatically registered
+        </p>
       </form>
     </div>
   );

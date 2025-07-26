@@ -1,364 +1,178 @@
 const express = require("express");
 const cors = require("cors");
+const { createClient } = require("@supabase/supabase-js");
+require("dotenv").config();
 
 console.log("🔍 Starting server initialization...");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
 
-// Mock Database (since you don't have Prisma set up)
-let mockUsers = [];
-let mockSellers = [];
-let mockProducts = [
-  {
-    id: "1",
-    name: "Royal Crimson Lehenga with Gold Embroidery",
-    description: "Exquisite handcrafted lehenga with intricate gold work",
-    category: "lehenga",
-    price: 25000,
-    imageUrl:
-      "https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=400",
-    sellerId: "seller-1",
-    stockQuantity: 5,
-    isActive: true,
-  },
-  {
-    id: "2",
-    name: "Purple Anarkali with Zardozi Work",
-    description:
-      "Traditional Rajasthani anarkali with authentic zardozi embroidery",
-    category: "kurti",
-    price: 18000,
-    imageUrl:
-      "https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d?w=400",
-    sellerId: "seller-1",
-    stockQuantity: 8,
-    isActive: true,
-  },
-  {
-    id: "3",
-    name: "Emerald Royal Saree with Gold Border",
-    description: "Handwoven silk saree with traditional gold border",
-    category: "saree",
-    price: 15000,
-    imageUrl:
-      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=400",
-    sellerId: "seller-2",
-    stockQuantity: 3,
-    isActive: true,
-  },
-];
-let mockCarts = [];
-let mockOrders = [];
+// Validate environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("❌ Missing Supabase environment variables");
+  process.exit(1);
+}
 
-// Helper functions
-const generateId = () =>
-  `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+// Initialize Supabase clients
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
+
+console.log("✅ Supabase client initialized");
+
+// CORS configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      "http://localhost:5173",
+      "http://localhost:8080",
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:8080",
+      "http://0.0.0.0:8080",
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log("CORS blocked origin:", origin);
+      callback(null, true); // Allow for now to test
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Request logging
+app.use((req, res, next) => {
+  console.log(
+    `${new Date().toISOString()} - ${req.method} ${
+      req.path
+    } - Origin: ${req.get("Origin")}`
+  );
+  next();
+});
 
 // Database functions
-const createUser = async (userData) => {
-  const newUser = {
-    id: generateId(),
-    email: userData.email,
-    password: userData.password,
-    phoneNumber: userData.phoneNumber || null,
-    address: userData.address || null,
-    createdAt: new Date().toISOString(),
-  };
-
-  mockUsers.push(newUser);
-  console.log("✅ User created:", newUser.email);
-  return newUser;
-};
-
-const signInUser = async (email, password) => {
-  const user = mockUsers.find(
-    (u) => u.email === email && u.password === password
-  );
-  if (!user) {
-    throw new Error("Invalid credentials");
-  }
-  console.log("✅ User signed in:", user.email);
-  return user;
-};
-
 const getAllProducts = async () => {
-  console.log("✅ Returning all products:", mockProducts.length);
-  return mockProducts;
-};
+  try {
+    console.log("📦 Fetching products from database...");
 
-const addToCart = async (userId, productId, quantity = 1) => {
-  let cart = mockCarts.find((c) => c.userId === userId);
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        `
+        *,
+        categories (
+          name,
+          slug
+        )
+      `
+      )
+      .eq("is_active", true);
 
-  if (!cart) {
-    cart = {
-      id: generateId(),
-      userId: userId,
-      CartItem: [],
-      createdAt: new Date().toISOString(),
-    };
-    mockCarts.push(cart);
-  }
-
-  const existingItem = cart.CartItem.find(
-    (item) => item.productId === productId
-  );
-
-  if (existingItem) {
-    existingItem.quantity += quantity;
-  } else {
-    const product = mockProducts.find((p) => p.id === productId);
-    cart.CartItem.push({
-      id: generateId(),
-      productId: productId,
-      quantity: quantity,
-      addedAt: new Date().toISOString(),
-      Product: product,
-    });
-  }
-
-  console.log("✅ Added to cart for user:", userId);
-  return cart;
-};
-
-const removeFromCart = async (userId, productId) => {
-  const cart = mockCarts.find((c) => c.userId === userId);
-  if (cart) {
-    cart.CartItem = cart.CartItem.filter(
-      (item) => item.productId !== productId
-    );
-    console.log("✅ Removed from cart for user:", userId);
-  }
-};
-
-const getCart = async (userId) => {
-  const cart = mockCarts.find((c) => c.userId === userId);
-  if (!cart) {
-    return null;
-  }
-
-  // Ensure products are populated
-  cart.CartItem = cart.CartItem.map((item) => {
-    if (!item.Product) {
-      item.Product = mockProducts.find((p) => p.id === item.productId);
+    if (error) {
+      console.error("Database error:", error);
+      throw error;
     }
-    return item;
-  });
 
-  console.log(
-    "✅ Cart retrieved for user:",
-    userId,
-    "items:",
-    cart.CartItem.length
-  );
-  return cart;
+    console.log(`✅ Found ${data?.length || 0} products`);
+    return data || [];
+  } catch (error) {
+    console.error("Error in getAllProducts:", error);
+    throw error;
+  }
 };
 
-const placeOrder = async (userId, shippingAddress) => {
-  const cart = await getCart(userId);
+// Test database connection
+const testDatabase = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("products")
+      .select("count")
+      .limit(1);
 
-  if (!cart || cart.CartItem.length === 0) {
-    throw new Error("Cart is empty");
+    if (error) throw error;
+    console.log("✅ Database connection test passed");
+    return true;
+  } catch (error) {
+    console.error("❌ Database connection test failed:", error);
+    return false;
   }
-
-  const totalAmount = cart.CartItem.reduce((sum, item) => {
-    return sum + item.Product.price * item.quantity;
-  }, 0);
-
-  const newOrder = {
-    id: generateId(),
-    userId: userId,
-    shippingAddress: shippingAddress,
-    totalAmount: totalAmount,
-    status: "pending",
-    items: cart.CartItem,
-    createdAt: new Date().toISOString(),
-  };
-
-  mockOrders.push(newOrder);
-
-  // Clear cart
-  const cartIndex = mockCarts.findIndex((c) => c.userId === userId);
-  if (cartIndex !== -1) {
-    mockCarts[cartIndex].CartItem = [];
-  }
-
-  console.log("✅ Order placed:", newOrder.id, "Amount:", totalAmount);
-  return newOrder;
 };
 
-console.log("🔧 Setting up middleware...");
-
-// Middleware
-app.use(
-  cors({
-    origin: ["http://localhost:5173", "https://your-frontend-domain.com"],
-    credentials: true,
-  })
-);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-console.log("🛣️  Setting up routes...");
-
-// Health check endpoint
-app.get("/health", (req, res) => {
+// Health check
+app.get("/health", async (req, res) => {
+  const dbStatus = await testDatabase();
   res.status(200).json({
     status: "OK",
+    database: dbStatus ? "connected" : "disconnected",
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
+    environment: NODE_ENV,
   });
 });
 
-// User endpoints
-app.post("/api/v1/user", async (req, res) => {
-  try {
-    const { email, password, phoneNumber, address } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-
-    const userData = { email, password, phoneNumber, address };
-    const newUser = await createUser(userData);
-    res.status(201).json(newUser);
-  } catch (error) {
-    console.error("Error creating user:", error);
-    res.status(500).json({ error: "Failed to create user" });
-  }
-});
-
-app.post("/api/v1/user/signin", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-
-    const user = await signInUser(email, password);
-    res.json(user);
-  } catch (error) {
-    console.error("Error signing in user:", error);
-    res.status(401).json({ error: "Invalid credentials" });
-  }
-});
-
-// Product endpoints
+// Products endpoint
 app.get("/api/v1/products", async (req, res) => {
   try {
     const products = await getAllProducts();
-    res.json(products);
+
+    res.json({
+      success: true,
+      count: products.length,
+      data: products,
+    });
   } catch (error) {
-    console.error("Error getting products:", error);
-    res.status(500).json({ error: "Failed to get products" });
+    console.error("Products endpoint error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch products",
+      message: error.message,
+      code: "PRODUCTS_FETCH_ERROR",
+    });
   }
 });
 
-// Cart endpoints
-app.post("/api/v1/cart", async (req, res) => {
-  try {
-    const { userId, productId, quantity } = req.body;
-
-    if (!userId || !productId) {
-      return res
-        .status(400)
-        .json({ error: "UserId and productId are required" });
-    }
-
-    const cart = await addToCart(userId, productId, quantity || 1);
-    res.json(cart);
-  } catch (error) {
-    console.error("Error adding to cart:", error);
-    res.status(500).json({ error: "Failed to add to cart" });
-  }
-});
-
-app.delete("/api/v1/cart", async (req, res) => {
-  try {
-    const { userId, productId } = req.body;
-
-    if (!userId || !productId) {
-      return res
-        .status(400)
-        .json({ error: "UserId and productId are required" });
-    }
-
-    await removeFromCart(userId, productId);
-    res.json({ message: "Item removed from cart" });
-  } catch (error) {
-    console.error("Error removing from cart:", error);
-    res.status(500).json({ error: "Failed to remove from cart" });
-  }
-});
-
-app.get("/api/v1/cart/:id", async (req, res) => {
-  try {
-    const userId = req.params.id;
-    const cart = await getCart(userId);
-
-    if (!cart) {
-      return res.json({
-        id: null,
-        userId: userId,
-        CartItem: [],
-        items: [],
-      });
-    }
-
-    res.json(cart);
-  } catch (error) {
-    console.error("Error getting cart:", error);
-    res.status(500).json({ error: "Failed to get cart" });
-  }
-});
-
-// Order endpoints
-app.post("/api/v1/order", async (req, res) => {
-  try {
-    const { userId, shippingAddress } = req.body;
-
-    if (!userId || !shippingAddress) {
-      return res
-        .status(400)
-        .json({ error: "UserId and shippingAddress are required" });
-    }
-
-    const order = await placeOrder(userId, shippingAddress);
-    res.status(201).json(order);
-  } catch (error) {
-    console.error("Error placing order:", error);
-    res.status(500).json({ error: "Failed to place order" });
-  }
-});
-
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
+  res.status(500).json({
+    error: "Internal server error",
+    message: err.message,
+  });
 });
 
 // 404 handler
 app.use("*", (req, res) => {
-  res.status(404).json({ error: "Endpoint not found" });
+  res.status(404).json({
+    error: "Endpoint not found",
+    path: req.originalUrl,
+  });
 });
-
-console.log("🚀 Starting server on port", PORT);
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`✅ Server successfully started on port ${PORT}`);
-  console.log(`📡 API available at http://localhost:${PORT}`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+app.listen(PORT, async () => {
+  console.log(`✅ Server started on port ${PORT}`);
+  console.log(`📡 API: http://localhost:${PORT}`);
+
+  // Test database on startup
+  await testDatabase();
 });
 
-// Error handlers
-process.on("uncaughtException", (error) => {
-  console.error("💥 Uncaught Exception:", error);
-  process.exit(1);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("💥 Unhandled Rejection at:", promise, "reason:", reason);
-  process.exit(1);
-});
+module.exports = app;
