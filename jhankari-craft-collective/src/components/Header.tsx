@@ -3,7 +3,7 @@ import { ShoppingCart, Search, User, Menu, X, LogIn, LogOut } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getCurrentUser, getCartCount } from "@/lib/mockDatabase";
-import LoginDialog from "./LoginDialog";
+import { LoginDialog } from './LoginDialog';
 import CartDialog from "./CartDialog";
 
 const Header = () => { 

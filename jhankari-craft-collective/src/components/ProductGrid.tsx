@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import ProductCard from "./ProductCard";
+import { ProductCard } from "./ProductCard";
 import { Button } from "@/components/ui/button";
 import { Filter, SlidersHorizontal } from "lucide-react";
 import { getAllProducts, getCurrentUser } from "@/lib/mockDatabase";

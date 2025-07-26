@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from '@/contexts/AuthContext';
+import { LoginDialog } from './LoginDialog';
 
 const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,6 +19,8 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   const [shippingAddress, setShippingAddress] = useState("");
   const [user, setUser] = useState(null);
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
 
   useEffect(() => {
     const currentUser = getCurrentUser();
@@ -175,6 +179,18 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
     }, 0);
   };
 
+  const handleCheckout = () => {
+    if (!isAuthenticated) {
+      setShowLoginDialog(true);
+      return;
+    }
+    processOrder();
+  };
+
+  const processOrder = () => {
+    // ... your existing checkout logic ...
+  };
+
   if (!user) {
     return (
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -305,16 +321,24 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
                 <Button
                   variant="royal"
                   className="w-full"
-                  onClick={handlePlaceOrder}
+                  onClick={handleCheckout}
                   disabled={orderLoading || !shippingAddress.trim()}
                 >
-                  {orderLoading ? "Placing Order..." : `Place Order - ₹${calculateTotal().toLocaleString('en-IN')}`}
+                  {isAuthenticated ? 'Place Order' : 'Login & Place Order'}
                 </Button>
               </CardContent>
             </Card>
           </div>
         )}
       </DialogContent>
+      <LoginDialog
+        open={showLoginDialog}
+        onClose={() => setShowLoginDialog(false)}
+        onLoginSuccess={() => {
+          setShowLoginDialog(false);
+          processOrder();
+        }}
+      />
     </Dialog>
   );
 };

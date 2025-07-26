@@ -1,5 +1,4 @@
-const {PrismaClient} = require("./generated/prisma"); 
-
+const { PrismaClient } = require("./generated/prisma");
 
 let prisma;
 if (!global.prisma) {
@@ -7,14 +6,50 @@ if (!global.prisma) {
 }
 prisma = global.prisma;
 
+async function signInSeller(email, password) {
+  try {
+    const seller = await prisma.seller.findUnique({
+      where: { email: email },
+    });
+
+    if (!seller || seller.password !== password) {
+      throw new Error("Invalid credentials");
+    }
+
+    return seller;
+  } catch (error) {
+    console.error("Seller signin error:", error);
+    throw error;
+  }
+}
+
+async function findProductsByName(name) {
+  try {
+    return await prisma.product.findMany({
+      where: {
+        name: {
+          contains: name,
+          mode: "insensitive",
+        },
+      },
+      include: {
+        Seller: true,
+      },
+    });
+  } catch (error) {
+    console.error("Error finding products by name:", error);
+    throw error;
+  }
+}
+
 async function createUser(userData) {
   const user = await prisma.user.create({
     data: {
       email: userData.email,
       password: userData.password,
       phoneNumber: userData.phoneNumber || null,
-      address: userData.address || null
-    }
+      address: userData.address || null,
+    },
   });
   console.log(user);
 
@@ -22,31 +57,28 @@ async function createUser(userData) {
 }
 
 const userData = {
-  email: 'user@example.com',
-  password: 'securepassword123',
-  phoneNumber: '1234567890', // optional
-  address: '123 Street, City' // optional
+  email: "user@example.com",
+  password: "securepassword123",
+  phoneNumber: "1234567890", // optional
+  address: "123 Street, City", // optional
 };
 
 // createUser(userData);
-
 
 async function getUserById(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {
       Cart: true,
-      Order: true
-    }
+      Order: true,
+    },
   });
-  console.log(user)
+  console.log(user);
   return user;
-  
 }
 
-
 //getUserById("5efcb0e3-0539-4370-88c0-39430e1facd6");
-  
+
 // Seller Functions
 async function createSeller(sellerData) {
   const seller = await prisma.seller.create({
@@ -54,10 +86,10 @@ async function createSeller(sellerData) {
       email: sellerData.email,
       password: sellerData.password,
       businessName: sellerData.businessName,
-      phoneNumber: sellerData.phoneNumber || null
-    }
+      phoneNumber: sellerData.phoneNumber || null,
+    },
   });
-  console.log(seller)
+  console.log(seller);
   return seller;
 }
 
@@ -65,10 +97,10 @@ async function getSellerById(sellerId) {
   const seller = await prisma.seller.findUnique({
     where: { id: sellerId },
     include: {
-      Product: true
-    }
+      Product: true,
+    },
   });
-  console.log(seller)
+  console.log(seller);
   return seller;
 }
 
@@ -84,10 +116,9 @@ async function getSellerById(sellerId) {
 // createSeller(sellerData);
 // getSellerById("d88ff131-f6bc-4adc-ad01-4652a4775191");
 
-
 async function createProduct(productData) {
-  console.log('Creating product with data:', productData);
-  
+  console.log("Creating product with data:", productData);
+
   const product = await prisma.product.create({
     data: {
       name: productData.name,
@@ -97,28 +128,26 @@ async function createProduct(productData) {
       price: productData.price,
       sellerId: productData.sellerId,
       stockQuantity: productData.stockQuantity || 0,
-      isActive: productData.isActive || true
-    }
+      isActive: productData.isActive || true,
+    },
   });
-  
-  console.log('Product created successfully:', product);
+
+  console.log("Product created successfully:", product);
   return product;
 }
 
-
 const productData = {
-  name: 'Beautiful Lehenga',
-  description: 'Traditional Indian wedding wear',
-  category: 'lehenga',
-  price: 15000.00,
-  sellerId: 'd88ff131-f6bc-4adc-ad01-4652a4775191',
+  name: "Beautiful Lehenga",
+  description: "Traditional Indian wedding wear",
+  category: "lehenga",
+  price: 15000.0,
+  sellerId: "d88ff131-f6bc-4adc-ad01-4652a4775191",
   stockQuantity: 10,
-  imageUrl: 'https://example.com/lehenga.jpg'
+  imageUrl: "https://example.com/lehenga.jpg",
 };
 
 // Test call
 // createProduct(productData);
-
 
 async function getProductById(productId) {
   try {
@@ -131,7 +160,7 @@ async function getProductById(productId) {
             businessName: true,
             email: true,
             phoneNumber: true,
-          }
+          },
         },
         CartItem: {
           select: {
@@ -139,7 +168,7 @@ async function getProductById(productId) {
             quantity: true,
             cartId: true,
             addedAt: true,
-          }
+          },
         },
         OrderItem: {
           select: {
@@ -148,9 +177,9 @@ async function getProductById(productId) {
             quantity: true,
             unitPrice: true,
             createdAt: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     if (!product) {
@@ -158,11 +187,10 @@ async function getProductById(productId) {
       return null;
     }
 
-    console.log('Fetched Product:', product);
+    console.log("Fetched Product:", product);
     return product;
-
   } catch (error) {
-    console.error('Error fetching product:', error);
+    console.error("Error fetching product:", error);
     throw error;
   }
 }
@@ -172,33 +200,32 @@ async function getProductById(productId) {
 
 // Function to find products by name
 async function findProductsByName(name) {
-    return prisma.product.findMany({
-        where: {
-            name: {
-                contains: name,
-                mode: 'insensitive'
-            }
-        }
-    });
+  return prisma.product.findMany({
+    where: {
+      name: {
+        contains: name,
+        mode: "insensitive",
+      },
+    },
+  });
 }
 
 // Test call
 // findProductsByName("lehenga").then(products => console.log(products));
 
-
 async function addToCart(userId, productId, quantity = 1) {
   try {
     // Step 1: Ensure the user has a cart
     let cart = await prisma.cart.findUnique({
-      where: { userId: userId }
+      where: { userId: userId },
     });
 
     if (!cart) {
       cart = await prisma.cart.create({
         data: {
           userId: userId,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
     }
 
@@ -207,9 +234,9 @@ async function addToCart(userId, productId, quantity = 1) {
       where: {
         cartId_productId: {
           cartId: cart.id,
-          productId: productId
-        }
-      }
+          productId: productId,
+        },
+      },
     });
 
     if (existingCartItem) {
@@ -218,26 +245,25 @@ async function addToCart(userId, productId, quantity = 1) {
         where: {
           cartId_productId: {
             cartId: cart.id,
-            productId: productId
-          }
+            productId: productId,
+          },
         },
         data: {
           quantity: {
-            increment: quantity
+            increment: quantity,
           },
-          addedAt: new Date()
-        }
+          addedAt: new Date(),
+        },
       });
 
-      console.log('Updated CartItem:', updatedItem);
+      console.log("Updated CartItem:", updatedItem);
       return updatedItem;
-
     } else {
       // Step 4: First check if product exists
       const product = await prisma.product.findUnique({
         where: {
-          id: productId
-        }
+          id: productId,
+        },
       });
 
       if (!product) {
@@ -249,16 +275,15 @@ async function addToCart(userId, productId, quantity = 1) {
         data: {
           cartId: cart.id,
           productId: productId,
-          quantity: quantity
-        }
+          quantity: quantity,
+        },
       });
 
-      console.log('Added new CartItem:', newCartItem);
+      console.log("Added new CartItem:", newCartItem);
       return newCartItem;
     }
-
   } catch (error) {
-    console.error('Error in addToCart:', error);
+    console.error("Error in addToCart:", error);
     throw error;
   }
 }
@@ -269,7 +294,7 @@ async function removeFromCart(userId, productId) {
   try {
     // Step 1: Get the user's cart
     const cart = await prisma.cart.findUnique({
-      where: { userId: userId }
+      where: { userId: userId },
     });
 
     if (!cart) {
@@ -281,16 +306,15 @@ async function removeFromCart(userId, productId) {
       where: {
         cartId_productId: {
           cartId: cart.id,
-          productId: productId
-        }
-      }
+          productId: productId,
+        },
+      },
     });
 
     console.log("Removed from cart:", deletedItem);
     return deletedItem;
-
   } catch (error) {
-    if (error.code === 'P2025') {
+    if (error.code === "P2025") {
       console.warn("CartItem not found.");
       return null;
     }
@@ -299,9 +323,6 @@ async function removeFromCart(userId, productId) {
     throw error;
   }
 }
-
-
-
 
 async function getCart(userId) {
   try {
@@ -317,12 +338,12 @@ async function getCart(userId) {
                 price: true,
                 imageUrl: true,
                 stockQuantity: true,
-                isActive: true
-              }
-            }
-          }
-        }
-      }
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!cart) {
@@ -332,25 +353,22 @@ async function getCart(userId) {
 
     console.log("Cart fetched:", cart);
     return cart;
-
   } catch (error) {
     console.error("Error fetching cart:", error);
     throw error;
   }
 }
 
-
-
-//getCart("5efcb0e3-0539-4370-88c0-39430e1facd6") ; 
+//getCart("5efcb0e3-0539-4370-88c0-39430e1facd6") ;
 
 async function placeOrder(userId, shippingAddress) {
   const cart = await prisma.cart.findUnique({
     where: { userId },
     include: {
       CartItem: {
-        include: { Product: true }
-      }
-    }
+        include: { Product: true },
+      },
+    },
   });
 
   if (!cart || cart.CartItem.length === 0) {
@@ -387,10 +405,10 @@ async function placeOrder(userId, shippingAddress) {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.Product.price,
-          }))
-        }
+          })),
+        },
       },
-      include: { OrderItem: true }
+      include: { OrderItem: true },
     });
 
     // Deduct stock for each item
@@ -399,9 +417,9 @@ async function placeOrder(userId, shippingAddress) {
         where: { id: item.productId },
         data: {
           stockQuantity: {
-            decrement: item.quantity
-          }
-        }
+            decrement: item.quantity,
+          },
+        },
       });
     }
 
@@ -410,28 +428,24 @@ async function placeOrder(userId, shippingAddress) {
 
   // Clear the cart
   await prisma.cartItem.deleteMany({
-    where: { cartId: cart.id }
+    where: { cartId: cart.id },
   });
 
   console.log("Order(s) placed:", orders);
   return orders;
 }
 
-
-
 async function updateOrderStatus(orderId, newStatus) {
   const updatedOrder = await prisma.order.update({
     where: { id: orderId },
     data: {
-      status: newStatus
-    }
+      status: newStatus,
+    },
   });
 
   console.log("Order status updated:", updatedOrder);
   return updatedOrder;
 }
-
-
 
 async function getSellerOrders(sellerId) {
   const orders = await prisma.order.findMany({
@@ -440,20 +454,19 @@ async function getSellerOrders(sellerId) {
       OrderItem: {
         include: {
           Product: {
-            select: { name: true, price: true }
-          }
-        }
+            select: { name: true, price: true },
+          },
+        },
       },
       User: {
-        select: { email: true, address: true }
-      }
+        select: { email: true, address: true },
+      },
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
   });
 
   return orders;
 }
-
 
 async function getUserOrders(userId) {
   const orders = await prisma.order.findMany({
@@ -462,21 +475,19 @@ async function getUserOrders(userId) {
       OrderItem: {
         include: {
           Product: {
-            select: { name: true, imageUrl: true }
-          }
-        }
+            select: { name: true, imageUrl: true },
+          },
+        },
       },
       Seller: {
-        select: { businessName: true }
-      }
+        select: { businessName: true },
+      },
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
   });
 
   return orders;
 }
-
-
 
 async function getOrderById(orderId) {
   const order = await prisma.order.findUnique({
@@ -484,26 +495,24 @@ async function getOrderById(orderId) {
     include: {
       OrderItem: {
         include: {
-          Product: true
-        }
+          Product: true,
+        },
       },
       User: true,
-      Seller: true
-    }
+      Seller: true,
+    },
   });
 
   return order;
 }
 
-
 //placeOrder( "5efcb0e3-0539-4370-88c0-39430e1facd6" ,"123 Test Lane");
-
 
 async function getAllProducts() {
   const products = await prisma.product.findMany({
     include: {
-      Seller: true
-    }
+      Seller: true,
+    },
   });
   console.log(products);
   return products;
@@ -517,23 +526,23 @@ async function signInUser(email, password) {
       where: { email },
       include: {
         Cart: true,
-        Order: true
-      }
+        Order: true,
+      },
     });
 
     if (!user) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     // Here you would typically compare the password with a hashed password
     // For now, we're just checking if the passwords match
     if (user.password !== password) {
-      throw new Error('Invalid password');
+      throw new Error("Invalid password");
     }
 
     return user;
   } catch (error) {
-    console.error('Signin error:', error);
+    console.error("Signin error:", error);
     throw error;
   }
 }
@@ -543,20 +552,20 @@ async function getCartCount(userId) {
     const cart = await prisma.cart.findMany({
       where: {
         userId,
-        order: null // Only count items not in an order
-      }
+        order: null, // Only count items not in an order
+      },
     });
-    
+
     return cart.reduce((total, item) => total + item.quantity, 0);
   } catch (error) {
-    console.error('Error getting cart count:', error);
+    console.error("Error getting cart count:", error);
     throw error;
   }
 }
 
 async function signInSeller(email, password) {
   const seller = await prisma.seller.findUnique({
-    where: { email: email }
+    where: { email: email },
   });
 
   if (!seller || seller.password !== password) {
@@ -585,5 +594,7 @@ module.exports = {
   getUserOrders,
   getOrderById,
   signInSeller,
-  getCartCount
+  getCartCount,
+  signInSeller,
+  findProductsByName,
 };

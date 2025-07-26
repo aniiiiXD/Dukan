@@ -1,0 +1,1549 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+api/
+  index.js
+payment/
+  app.js
+prisma/
+  migrations/
+    20250712110103_issue_fix/
+      migration.sql
+    migration_lock.toml
+  schema.prisma
+.gitignore
+client.js
+package.json
+server.js
+vercel.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="api/index.js">
+const express = require("express");     
+const { getUserById, createUser, createSeller, getSellerById, createProduct, getProductById, addToCart, removeFromCart, getCart, placeOrder, updateOrderStatus, getSellerOrders, getUserOrders, getOrderById, signInUser, getAllProducts } = require("../client"); 
+const cors = require('cors');
+const app = express();
+const PORT = 3000; 
+
+
+app.use(cors()); 
+app.use(express.json());
+app.use(express.urlencoded());
+
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+
+
+app.get("/api/v1/user/:id", async (req,res) => {
+    const userId = req.params.id; 
+    const user = getUserById(userId); 
+    res.json(user) ; 
+});
+
+// Endpoint to find products by name
+app.get("/api/v1/products/search", async (req, res) => {
+    const { name } = req.query;
+    if (!name) {
+        return res.status(400).json({ error: 'Name parameter is required' });
+    }
+    try {
+        const products = await findProductsByName(name);
+        res.json(products);
+    } catch (error) {
+        console.error('Error finding products:', error);
+        res.status(500).json({ error: 'Failed to find products' });
+    }
+}); 
+
+
+app.post("/api/v1/user" , async (req, res) => {
+    const {email , password, phoneNumber, address} = req.body; 
+    const userData = {
+        email: email, 
+        password: password, 
+        phoneNumber: phoneNumber, 
+        address: address ,  
+    }
+
+    const newUser = await createUser(userData);
+    console.log(newUser);
+    res.json(newUser);
+})
+
+app.post("/api/v1/user/signin", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const user = await signInUser(email, password);
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    res.json(user);
+})
+
+
+
+app.post("/api/v1/seller/signup" , async (req,res) => {
+    const {email , password, businessName ,phoneNumber } = req.body; 
+    const userData = {
+        email: email, 
+        password: password, 
+        businessName: businessName , 
+        phoneNumber: phoneNumber,   
+    }
+
+    const newSeller = await createSeller(userData);
+    res.json(newSeller);
+})
+
+app.get("/api/v1/seller/:id", async (req,res) => {
+    const sellerId = req.params.id;
+    const seller = await getSellerById(sellerId); 
+    res.json(seller) ; 
+}); 
+
+
+app.post("/api/v1/seller/signin" , async (req, res) => {
+    const { email, password } = req.body;
+    const seller = await signInSeller(email, password);
+    
+    if (!seller) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    res.json(seller);
+})
+
+
+app.post("/api/v1/product" , async (req, res) => {
+    const { name, description, category, price, sellerId, stockQuantity, imageUrl } = req.body;
+    const productData = {
+        name,
+        description,
+        category,
+        price,
+        sellerId,
+        stockQuantity,
+        imageUrl
+    };
+    const product = await createProduct(productData);
+    res.json(product);
+})
+
+
+app.get("/api/v1/product/:id", async (req, res) => {
+    const productId = req.params.id;
+    const product = await getProductById(productId);
+    res.json(product);
+})
+
+app.get("/api/v1/products", async (req, res) => {
+    const products = await getAllProducts();
+    res.json(products);
+})
+
+
+app.post("/api/v1/cart" , async(req, res) => {
+    const { userId, productId, quantity } = req.body;
+    const cart = await addToCart(userId, productId, quantity);
+    res.json(cart);
+})
+
+
+app.delete("/api/v1/cart" , async(req, res) => {
+    const { userId, productId } = req.body;
+    await removeFromCart(userId, productId);
+    res.json({ message: 'Item removed from cart' });
+})
+
+
+app.get("/api/v1/cart/:id" , async (req, res) => {
+    const userId = req.params.id;
+    const cart = await getCart(userId);
+    res.json(cart);
+})
+
+
+app.post("/api/v1/order", async(req, res) => {
+    const { userId, shippingAddress } = req.body;
+    const order = await placeOrder(userId, shippingAddress);
+    res.json(order);
+})
+
+// Update Order Status
+app.post("/api/v1/order/:id/status", async (req, res) => {
+    const { newStatus } = req.body();
+    const orderId = req.params.id;
+    const updatedOrder = await updateOrderStatus(orderId, newStatus);
+    res.json(updatedOrder);
+})
+
+// Get Seller Orders
+app.get("/api/v1/seller/orders", async (req, res) => {
+    const sellerId = req.query.sellerId;
+    const orders = await getSellerOrders(sellerId);
+    res.json(orders);
+})
+
+// Get User Orders
+app.get("/api/v1/user/orders", async (req, res) => {
+    const userId = req.query.userId;
+    const orders = await getUserOrders(userId);
+    res.json(orders);
+})
+
+// Get Order by ID
+app.get("/api/v1/order/:id", async (req, res) => {
+    const orderId = req.params.id;
+    const order = await getOrderById(orderId);
+    res.json(order);
+})
+
+
+
+
+app.listen(3000 , ()=> {
+    console.log("Server is starting boi")
+})
+
+
+module.exports = app ;
+</file>
+
+<file path="payment/app.js">
+const express = require("express"); 
+const Razorpay = require("razorpay"); 
+const bodyParser = require('body-parser'); 
+const path = require('path'); 
+const fs = require('fs'); 
+const { validateWebhookSignature } = require('razorpay/dist/utils/razorpay-utils');
+
+ 
+const app = express(); 
+const port = 3000 ; 
+
+app.use(bodyParser.json()); 
+app.use(bodyParser.urlencoded({ extended: true})); 
+
+
+app.use(express.static(path.join(__dirname))); 
+
+
+const razorpay = new Razorpay({
+    key_id: "rzp_test_gJyeQ7PpskfU2x" , 
+    key_secret: "VySL1IsLhWq7CXfmCbmOUAZG", 
+});
+
+const readData = () => {
+    try {
+        if (!fs.existsSync('orders.json')) {
+            console.log('Orders file does not exist, creating...');
+            writeData([]);
+            return [];
+        }
+        
+        const data = fs.readFileSync('orders.json', 'utf8'); 
+        return JSON.parse(data); 
+    } catch (error) {
+        console.error('Error reading orders file:', error);
+        return [];
+    }
+};
+
+const writeData = (data) => {
+    try {
+        fs.writeFileSync('orders.json', JSON.stringify(data, null,2)); 
+        console.log('Orders data written successfully');
+    } catch (error) {
+        console.error('Error writing orders data:', error);
+        throw error;
+    }
+};
+
+
+if (!fs.existsSync('orders.json')){
+    writeData([]); 
+}
+
+
+app.post('/create-order', async (req,res) => {
+    try {
+        console.log('Received create order request with body:', req.body);
+        const {amount , currency, receipt, notes } = req.body; 
+
+        const options = {
+            amount: amount*100 , 
+            currency , 
+            receipt , 
+            notes
+        };
+        console.log('Creating order with options:', options);
+
+        const order = await razorpay.orders.create(options); 
+        console.log('Order created successfully:', { orderId: order.id });
+
+        const orders = readData(); 
+        orders.push({
+            order_id: order.id, 
+            amount: order.amount, 
+            currency : order.currency ,
+            receipt: order.receipt , 
+            status: 'created',  
+        }); 
+        writeData(orders);
+        console.log('Order data saved successfully');
+
+        res.json(order); 
+    } catch (error) {
+        console.error('Error creating order:', error);
+        res.status(500).json({ error: 'Failed to create order' });
+    } 
+});
+
+
+app.get('/payment-success', async (req, res)=> {
+    console.log('Payment success page requested');
+    res.sendFile(path.join(__dirname, 'success.html')); 
+}); 
+
+
+app.post('/verify-payment', async (req, res)=> {
+    const { razorpay_order_id , razorpay_payment_id, razorpay_signature} = req.body ; 
+
+    const secret = razorpay.key_secret ; 
+    const body = razorpay_order_id + '|' + razorpay_payment_id; 
+
+    try {
+        const isValidSignature = validateWebhookSignature(body, razorpay_signature, secret); 
+        if(isValidSignature) {
+            const orders = readData(); 
+            const order = orders.find(o => o.order_id === razorpay_order_id);
+            if(order) {
+                order.status = 'paid'; 
+                order.payment_id = razorpay_payment_id;
+                writeData(orders);
+            }
+            res.status(200).json({status: 'ok' });
+        } else {
+            res.status(400).json({ status : 'verification failed'});
+            console.log("payment verification failed!"); 
+        }
+    } catch (error) {
+        console.log(error); 
+        res.status(500).json({status: "error", message: "Error verifying payment"});
+    }
+
+});
+
+
+
+app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+    console.log('Server started successfully!');
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled Rejection:', error);
+    process.exit(1);
+}); 
+
+
+
+module.exports = app ;
+</file>
+
+<file path="prisma/migrations/20250712110103_issue_fix/migration.sql">
+-- CreateEnum
+CREATE TYPE "Category" AS ENUM ('lehenga', 'saree', 'kurti', 'dupatta', 'jewelry', 'accessories');
+
+-- CreateEnum
+CREATE TYPE "OrderStatus" AS ENUM ('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled');
+
+-- CreateTable
+CREATE TABLE "Cart" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Cart_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CartItem" (
+    "id" TEXT NOT NULL,
+    "cartId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "addedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CartItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Order" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "shippingAddress" TEXT NOT NULL,
+    "status" "OrderStatus" NOT NULL DEFAULT 'pending',
+    "totalAmount" DECIMAL(10,2) NOT NULL,
+    "sellerId" TEXT NOT NULL,
+
+    CONSTRAINT "Order_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OrderItem" (
+    "id" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "unitPrice" DECIMAL(10,2) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "OrderItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Product" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "category" "Category" NOT NULL,
+    "imageUrl" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "price" DECIMAL(10,2) NOT NULL,
+    "sellerId" TEXT NOT NULL,
+    "stockQuantity" INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Seller" (
+    "id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "email" TEXT NOT NULL,
+    "phoneNumber" TEXT,
+    "password" TEXT NOT NULL,
+    "businessName" TEXT NOT NULL,
+
+    CONSTRAINT "Seller_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "User" (
+    "id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "email" TEXT NOT NULL,
+    "phoneNumber" TEXT,
+    "password" TEXT NOT NULL,
+    "address" TEXT,
+
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Cart_userId_key" ON "Cart"("userId");
+
+-- CreateIndex
+CREATE INDEX "Cart_userId_idx" ON "Cart"("userId");
+
+-- CreateIndex
+CREATE INDEX "CartItem_cartId_idx" ON "CartItem"("cartId");
+
+-- CreateIndex
+CREATE INDEX "CartItem_productId_idx" ON "CartItem"("productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CartItem_cartId_productId_key" ON "CartItem"("cartId", "productId");
+
+-- CreateIndex
+CREATE INDEX "Order_createdAt_idx" ON "Order"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "Order_sellerId_idx" ON "Order"("sellerId");
+
+-- CreateIndex
+CREATE INDEX "Order_status_idx" ON "Order"("status");
+
+-- CreateIndex
+CREATE INDEX "Order_userId_idx" ON "Order"("userId");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_orderId_idx" ON "OrderItem"("orderId");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_productId_idx" ON "OrderItem"("productId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OrderItem_orderId_productId_key" ON "OrderItem"("orderId", "productId");
+
+-- CreateIndex
+CREATE INDEX "Product_category_idx" ON "Product"("category");
+
+-- CreateIndex
+CREATE INDEX "Product_isActive_idx" ON "Product"("isActive");
+
+-- CreateIndex
+CREATE INDEX "Product_sellerId_idx" ON "Product"("sellerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Seller_email_key" ON "Seller"("email");
+
+-- CreateIndex
+CREATE INDEX "Seller_email_idx" ON "Seller"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "User_email_idx" ON "User"("email");
+
+-- AddForeignKey
+ALTER TABLE "Cart" ADD CONSTRAINT "Cart_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CartItem" ADD CONSTRAINT "CartItem_cartId_fkey" FOREIGN KEY ("cartId") REFERENCES "Cart"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CartItem" ADD CONSTRAINT "CartItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Order" ADD CONSTRAINT "Order_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Product" ADD CONSTRAINT "Product_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "Seller"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+</file>
+
+<file path="prisma/migrations/migration_lock.toml">
+# Please do not edit this file manually
+# It should be added in your version-control system (e.g., Git)
+provider = "postgresql"
+</file>
+
+<file path="prisma/schema.prisma">
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+ 
+model Cart {
+  id        String     @id  @default(uuid())
+  userId    String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime
+  User      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  CartItem  CartItem[]
+
+  @@index([userId])
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  addedAt   DateTime @default(now())
+  Cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+  @@index([productId])
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  userId          String
+  createdAt       DateTime    @default(now())
+  shippingAddress String
+  status          OrderStatus @default(pending)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  sellerId        String
+  User            User        @relation(fields: [userId], references: [id])
+  OrderItem       OrderItem[]
+
+  @@index([createdAt])
+  @@index([sellerId])
+  @@index([status])
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  Order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  Product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  name          String
+  description   String?
+  category      Category
+  imageUrl      String?
+  createdAt     DateTime    @default(now())
+  isActive      Boolean     @default(true)
+  price         Decimal     @db.Decimal(10, 2)
+  sellerId      String
+  stockQuantity Int         @default(0)
+  CartItem      CartItem[]
+  OrderItem     OrderItem[]
+  Seller        Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([isActive])
+  @@index([sellerId])
+}
+
+model Seller {
+  id           String    @id @default(uuid())
+  createdAt    DateTime  @default(now())
+  email        String    @unique
+  phoneNumber  String?
+  password     String
+  businessName String
+  Product      Product[]
+
+  @@index([email])
+}
+
+model User {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  email       String   @unique
+  phoneNumber String?
+  password    String
+  address     String?
+  Cart        Cart?
+  Order       Order[]
+
+  @@index([email])
+}
+
+enum Category {
+  lehenga
+  saree
+  kurti
+  dupatta
+  jewelry
+  accessories
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  shipped
+  delivered
+  cancelled
+}
+</file>
+
+<file path=".gitignore">
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+.vercel
+</file>
+
+<file path="client.js">
+const {PrismaClient} = require("./generated/prisma"); 
+
+
+let prisma;
+if (!global.prisma) {
+  global.prisma = new PrismaClient();
+}
+prisma = global.prisma;
+
+async function createUser(userData) {
+  const user = await prisma.user.create({
+    data: {
+      email: userData.email,
+      password: userData.password,
+      phoneNumber: userData.phoneNumber || null,
+      address: userData.address || null
+    }
+  });
+  console.log(user);
+
+  return user;
+}
+
+const userData = {
+  email: 'user@example.com',
+  password: 'securepassword123',
+  phoneNumber: '1234567890', // optional
+  address: '123 Street, City' // optional
+};
+
+// createUser(userData);
+
+
+async function getUserById(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      Cart: true,
+      Order: true
+    }
+  });
+  console.log(user)
+  return user;
+  
+}
+
+
+//getUserById("5efcb0e3-0539-4370-88c0-39430e1facd6");
+  
+// Seller Functions
+async function createSeller(sellerData) {
+  const seller = await prisma.seller.create({
+    data: {
+      email: sellerData.email,
+      password: sellerData.password,
+      businessName: sellerData.businessName,
+      phoneNumber: sellerData.phoneNumber || null
+    }
+  });
+  console.log(seller)
+  return seller;
+}
+
+async function getSellerById(sellerId) {
+  const seller = await prisma.seller.findUnique({
+    where: { id: sellerId },
+    include: {
+      Product: true
+    }
+  });
+  console.log(seller)
+  return seller;
+}
+
+// Test data
+// const sellerData = {
+//   email: 'seller1@example.com',
+//   password: 'sellerpassword123',
+//   businessName: 'Fashion Store',
+//   phoneNumber: '98765432101'
+// };
+
+// Test calls
+// createSeller(sellerData);
+// getSellerById("d88ff131-f6bc-4adc-ad01-4652a4775191");
+
+
+async function createProduct(productData) {
+  console.log('Creating product with data:', productData);
+  
+  const product = await prisma.product.create({
+    data: {
+      name: productData.name,
+      description: productData.description || null,
+      category: productData.category,
+      imageUrl: productData.imageUrl || null,
+      price: productData.price,
+      sellerId: productData.sellerId,
+      stockQuantity: productData.stockQuantity || 0,
+      isActive: productData.isActive || true
+    }
+  });
+  
+  console.log('Product created successfully:', product);
+  return product;
+}
+
+
+const productData = {
+  name: 'Beautiful Lehenga',
+  description: 'Traditional Indian wedding wear',
+  category: 'lehenga',
+  price: 15000.00,
+  sellerId: 'd88ff131-f6bc-4adc-ad01-4652a4775191',
+  stockQuantity: 10,
+  imageUrl: 'https://example.com/lehenga.jpg'
+};
+
+// Test call
+// createProduct(productData);
+
+
+async function getProductById(productId) {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        Seller: {
+          select: {
+            id: true,
+            businessName: true,
+            email: true,
+            phoneNumber: true,
+          }
+        },
+        CartItem: {
+          select: {
+            id: true,
+            quantity: true,
+            cartId: true,
+            addedAt: true,
+          }
+        },
+        OrderItem: {
+          select: {
+            id: true,
+            orderId: true,
+            quantity: true,
+            unitPrice: true,
+            createdAt: true,
+          }
+        }
+      }
+    });
+
+    if (!product) {
+      console.log(`Product with ID ${productId} not found.`);
+      return null;
+    }
+
+    console.log('Fetched Product:', product);
+    return product;
+
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    throw error;
+  }
+}
+
+// Test call
+//getProductById("2a0e431f-d184-4431-876b-03a788933ac6");
+
+// Function to find products by name
+async function findProductsByName(name) {
+    return prisma.product.findMany({
+        where: {
+            name: {
+                contains: name,
+                mode: 'insensitive'
+            }
+        }
+    });
+}
+
+// Test call
+// findProductsByName("lehenga").then(products => console.log(products));
+
+
+async function addToCart(userId, productId, quantity = 1) {
+  try {
+    // Step 1: Ensure the user has a cart
+    let cart = await prisma.cart.findUnique({
+      where: { userId: userId }
+    });
+
+    if (!cart) {
+      cart = await prisma.cart.create({
+        data: {
+          userId: userId,
+          updatedAt: new Date()
+        }
+      });
+    }
+
+    // Step 2: Check if the product already exists in the cart
+    const existingCartItem = await prisma.cartItem.findUnique({
+      where: {
+        cartId_productId: {
+          cartId: cart.id,
+          productId: productId
+        }
+      }
+    });
+
+    if (existingCartItem) {
+      // Step 3: If yes, update quantity
+      const updatedItem = await prisma.cartItem.update({
+        where: {
+          cartId_productId: {
+            cartId: cart.id,
+            productId: productId
+          }
+        },
+        data: {
+          quantity: {
+            increment: quantity
+          },
+          addedAt: new Date()
+        }
+      });
+
+      console.log('Updated CartItem:', updatedItem);
+      return updatedItem;
+
+    } else {
+      // Step 4: First check if product exists
+      const product = await prisma.product.findUnique({
+        where: {
+          id: productId
+        }
+      });
+
+      if (!product) {
+        throw new Error(`Product with ID ${productId} does not exist`);
+      }
+
+      // Step 5: Create new CartItem
+      const newCartItem = await prisma.cartItem.create({
+        data: {
+          cartId: cart.id,
+          productId: productId,
+          quantity: quantity
+        }
+      });
+
+      console.log('Added new CartItem:', newCartItem);
+      return newCartItem;
+    }
+
+  } catch (error) {
+    console.error('Error in addToCart:', error);
+    throw error;
+  }
+}
+
+//addToCart("5efcb0e3-0539-4370-88c0-39430e1facd6", "2a0e431f-d184-4431-876b-03a788933ac6", 2);
+
+async function removeFromCart(userId, productId) {
+  try {
+    // Step 1: Get the user's cart
+    const cart = await prisma.cart.findUnique({
+      where: { userId: userId }
+    });
+
+    if (!cart) {
+      throw new Error("Cart not found for user.");
+    }
+
+    // Step 2: Delete the CartItem if it exists
+    const deletedItem = await prisma.cartItem.delete({
+      where: {
+        cartId_productId: {
+          cartId: cart.id,
+          productId: productId
+        }
+      }
+    });
+
+    console.log("Removed from cart:", deletedItem);
+    return deletedItem;
+
+  } catch (error) {
+    if (error.code === 'P2025') {
+      console.warn("CartItem not found.");
+      return null;
+    }
+
+    console.error("Error removing from cart:", error);
+    throw error;
+  }
+}
+
+
+
+
+async function getCart(userId) {
+  try {
+    const cart = await prisma.cart.findUnique({
+      where: { userId },
+      include: {
+        CartItem: {
+          include: {
+            Product: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                imageUrl: true,
+                stockQuantity: true,
+                isActive: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!cart) {
+      console.log("Cart not found for user.");
+      return null;
+    }
+
+    console.log("Cart fetched:", cart);
+    return cart;
+
+  } catch (error) {
+    console.error("Error fetching cart:", error);
+    throw error;
+  }
+}
+
+
+
+//getCart("5efcb0e3-0539-4370-88c0-39430e1facd6") ; 
+
+async function placeOrder(userId, shippingAddress) {
+  const cart = await prisma.cart.findUnique({
+    where: { userId },
+    include: {
+      CartItem: {
+        include: { Product: true }
+      }
+    }
+  });
+
+  if (!cart || cart.CartItem.length === 0) {
+    throw new Error("Cart is empty or not found.");
+  }
+
+  const cartItems = cart.CartItem;
+
+  // Group items by seller
+  const sellerGroups = {};
+  for (const item of cartItems) {
+    const sellerId = item.Product.sellerId;
+    if (!sellerGroups[sellerId]) sellerGroups[sellerId] = [];
+    sellerGroups[sellerId].push(item);
+  }
+
+  const orders = [];
+
+  for (const [sellerId, items] of Object.entries(sellerGroups)) {
+    const totalAmount = items.reduce(
+      (sum, item) => sum + parseFloat(item.Product.price) * item.quantity,
+      0
+    );
+
+    const order = await prisma.order.create({
+      data: {
+        userId,
+        sellerId,
+        shippingAddress,
+        totalAmount,
+        status: "pending",
+        OrderItem: {
+          create: items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.Product.price,
+          }))
+        }
+      },
+      include: { OrderItem: true }
+    });
+
+    // Deduct stock for each item
+    for (const item of items) {
+      await prisma.product.update({
+        where: { id: item.productId },
+        data: {
+          stockQuantity: {
+            decrement: item.quantity
+          }
+        }
+      });
+    }
+
+    orders.push(order);
+  }
+
+  // Clear the cart
+  await prisma.cartItem.deleteMany({
+    where: { cartId: cart.id }
+  });
+
+  console.log("Order(s) placed:", orders);
+  return orders;
+}
+
+
+
+async function updateOrderStatus(orderId, newStatus) {
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: newStatus
+    }
+  });
+
+  console.log("Order status updated:", updatedOrder);
+  return updatedOrder;
+}
+
+
+
+async function getSellerOrders(sellerId) {
+  const orders = await prisma.order.findMany({
+    where: { sellerId },
+    include: {
+      OrderItem: {
+        include: {
+          Product: {
+            select: { name: true, price: true }
+          }
+        }
+      },
+      User: {
+        select: { email: true, address: true }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return orders;
+}
+
+
+async function getUserOrders(userId) {
+  const orders = await prisma.order.findMany({
+    where: { userId },
+    include: {
+      OrderItem: {
+        include: {
+          Product: {
+            select: { name: true, imageUrl: true }
+          }
+        }
+      },
+      Seller: {
+        select: { businessName: true }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return orders;
+}
+
+
+
+async function getOrderById(orderId) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      OrderItem: {
+        include: {
+          Product: true
+        }
+      },
+      User: true,
+      Seller: true
+    }
+  });
+
+  return order;
+}
+
+
+//placeOrder( "5efcb0e3-0539-4370-88c0-39430e1facd6" ,"123 Test Lane");
+
+
+async function getAllProducts() {
+  const products = await prisma.product.findMany({
+    include: {
+      Seller: true
+    }
+  });
+  console.log(products);
+  return products;
+}
+
+// console.log(getAllProducts());
+
+async function signInUser(email, password) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        Cart: true,
+        Order: true
+      }
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Here you would typically compare the password with a hashed password
+    // For now, we're just checking if the passwords match
+    if (user.password !== password) {
+      throw new Error('Invalid password');
+    }
+
+    return user;
+  } catch (error) {
+    console.error('Signin error:', error);
+    throw error;
+  }
+}
+
+async function getCartCount(userId) {
+  try {
+    const cart = await prisma.cart.findMany({
+      where: {
+        userId,
+        order: null // Only count items not in an order
+      }
+    });
+    
+    return cart.reduce((total, item) => total + item.quantity, 0);
+  } catch (error) {
+    console.error('Error getting cart count:', error);
+    throw error;
+  }
+}
+
+async function signInSeller(email, password) {
+  const seller = await prisma.seller.findUnique({
+    where: { email: email }
+  });
+
+  if (!seller || seller.password !== password) {
+    return null;
+  }
+
+  return seller;
+}
+
+module.exports = {
+  createUser,
+  getUserById,
+  createSeller,
+  findProductsByName,
+  getSellerById,
+  createProduct,
+  getProductById,
+  getAllProducts,
+  signInUser,
+  addToCart,
+  removeFromCart,
+  getCart,
+  placeOrder,
+  updateOrderStatus,
+  getSellerOrders,
+  getUserOrders,
+  getOrderById,
+  signInSeller,
+  getCartCount
+};
+</file>
+
+<file path="package.json">
+{
+  "name": "server2",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "npx prisma generate && npm install"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@prisma/client": "^6.11.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "prisma": "^6.11.1",
+    "razorpay": "^2.9.6",
+    "serverless-http": "^3.2.0",
+    "uuid": "^11.1.0"
+  }
+}
+</file>
+
+<file path="server.js">
+const express = require("express");     
+const { getUserById, createUser, createSeller, getSellerById, createProduct, getProductById, addToCart, removeFromCart, getCart, placeOrder, updateOrderStatus, getSellerOrders, getUserOrders, getOrderById, signInUser, getAllProducts } = require("./client"); 
+const cors = require('cors');
+const app = express();
+const PORT = 3000; 
+
+
+app.use(cors()); 
+app.use(express.json());
+app.use(express.urlencoded());
+
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+
+
+app.get("/api/v1/user/:id", async (req,res) => {
+    const userId = req.params.id; 
+    const user = getUserById(userId); 
+    res.json(user) ; 
+});
+
+// Endpoint to find products by name
+app.get("/api/v1/products/search", async (req, res) => {
+    const { name } = req.query;
+    if (!name) {
+        return res.status(400).json({ error: 'Name parameter is required' });
+    }
+    try {
+        const products = await findProductsByName(name);
+        res.json(products);
+    } catch (error) {
+        console.error('Error finding products:', error);
+        res.status(500).json({ error: 'Failed to find products' });
+    }
+}); 
+
+
+app.post("/api/v1/user" , async (req, res) => {
+    const {email , password, phoneNumber, address} = req.body; 
+    const userData = {
+        email: email, 
+        password: password, 
+        phoneNumber: phoneNumber, 
+        address: address ,  
+    }
+
+    const newUser = await createUser(userData);
+    console.log(newUser);
+    res.json(newUser);
+})
+
+app.post("/api/v1/user/signin", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const user = await signInUser(email, password);
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    res.json(user);
+})
+
+
+
+app.post("/api/v1/seller/signup" , async (req,res) => {
+    const {email , password, businessName ,phoneNumber } = req.body; 
+    const userData = {
+        email: email, 
+        password: password, 
+        businessName: businessName , 
+        phoneNumber: phoneNumber,   
+    }
+
+    const newSeller = await createSeller(userData);
+    res.json(newSeller);
+})
+
+app.get("/api/v1/seller/:id", async (req,res) => {
+    const sellerId = req.params.id;
+    const seller = await getSellerById(sellerId); 
+    res.json(seller) ; 
+}); 
+
+
+app.post("/api/v1/seller/signin" , async (req, res) => {
+    const { email, password } = req.body;
+    const seller = await signInSeller(email, password);
+    
+    if (!seller) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    res.json(seller);
+})
+
+
+app.post("/api/v1/product" , async (req, res) => {
+    const { name, description, category, price, sellerId, stockQuantity, imageUrl } = req.body;
+    const productData = {
+        name,
+        description,
+        category,
+        price,
+        sellerId,
+        stockQuantity,
+        imageUrl
+    };
+    const product = await createProduct(productData);
+    res.json(product);
+})
+
+
+app.get("/api/v1/product/:id", async (req, res) => {
+    const productId = req.params.id;
+    const product = await getProductById(productId);
+    res.json(product);
+})
+
+app.get("/api/v1/products", async (req, res) => {
+    const products = await getAllProducts();
+    res.json(products);
+})
+
+
+app.post("/api/v1/cart" , async(req, res) => {
+    const { userId, productId, quantity } = req.body;
+    const cart = await addToCart(userId, productId, quantity);
+    res.json(cart);
+})
+
+
+app.delete("/api/v1/cart" , async(req, res) => {
+    const { userId, productId } = req.body;
+    await removeFromCart(userId, productId);
+    res.json({ message: 'Item removed from cart' });
+})
+
+
+app.get("/api/v1/cart/:id" , async (req, res) => {
+    const userId = req.params.id;
+    const cart = await getCart(userId);
+    res.json(cart);
+})
+
+
+app.post("/api/v1/order", async(req, res) => {
+    const { userId, shippingAddress } = req.body;
+    const order = await placeOrder(userId, shippingAddress);
+    res.json(order);
+})
+
+// Update Order Status
+app.post("/api/v1/order/:id/status", async (req, res) => {
+    const { newStatus } = req.body();
+    const orderId = req.params.id;
+    const updatedOrder = await updateOrderStatus(orderId, newStatus);
+    res.json(updatedOrder);
+})
+
+// Get Seller Orders
+app.get("/api/v1/seller/orders", async (req, res) => {
+    const sellerId = req.query.sellerId;
+    const orders = await getSellerOrders(sellerId);
+    res.json(orders);
+})
+
+// Get User Orders
+app.get("/api/v1/user/orders", async (req, res) => {
+    const userId = req.query.userId;
+    const orders = await getUserOrders(userId);
+    res.json(orders);
+})
+
+// Get Order by ID
+app.get("/api/v1/order/:id", async (req, res) => {
+    const orderId = req.params.id;
+    const order = await getOrderById(orderId);
+    res.json(order);
+})
+
+
+
+module.exports = app ; 
+
+// app.listen(3000 , ()=> {
+//     console.log("Server is starting boi")
+// })
+</file>
+
+<file path="vercel.json">
+{ "version": 2, "rewrites": [{ "source": "/(.*)", "destination": "/api" }] }
+</file>
+
+</files>
