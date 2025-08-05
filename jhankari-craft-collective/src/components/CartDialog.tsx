@@ -10,7 +10,6 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/contexts/AuthContext';
 import { apiClient } from '@/config/api';
-import OTPLoginDialog from './OTPLoginDialog';
 import { 
   getGuestCart, 
   removeGuestCartItem,
@@ -45,10 +44,9 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
   const [loading, setLoading] = useState(false);
   const [orderLoading, setOrderLoading] = useState(false);
   const [shippingAddress, setShippingAddress] = useState("");
-  const [showOTPLogin, setShowOTPLogin] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, signInWithGoogle } = useAuth();
 
   // Load products for guest cart display
   useEffect(() => {
@@ -222,19 +220,41 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      const success = await signInWithGoogle();
+      if (success) {
+        toast({
+          title: "Login successful",
+          description: "Welcome to Jhankari!",
+        });
+        // After successful login, the AuthProvider will merge the guest cart
+        setTimeout(() => {
+          loadCart();
+        }, 1000);
+      } else {
+        toast({
+          title: "Login failed",
+          description: "Please try again",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      toast({
+        title: "Login failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleCheckout = () => {
     if (!isAuthenticated) {
-      setShowOTPLogin(true);
+      handleGoogleLogin();
       return;
     }
     handlePlaceOrder();
-  };
-
-  const handleLoginSuccess = () => {
-    setShowOTPLogin(false);
-    setTimeout(() => {
-      loadCart();
-    }, 1000);
   };
 
   // Get current cart items for display
@@ -297,7 +317,7 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
             </div>
             {!isAuthenticated && hasItems && (
               <Badge variant="outline" className="ml-auto text-xs">
-                Login required at checkout
+                Google login required at checkout
               </Badge>
             )}
           </DialogTitle>
@@ -469,8 +489,13 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
                   >
                     {!isAuthenticated ? (
                       <>
-                        <User className="h-5 w-5 mr-2" />
-                        Login to Checkout
+                        <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Sign in with Google to Checkout
                       </>
                     ) : orderLoading ? (
                       <>
@@ -490,12 +515,6 @@ const CartDialog = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
           )}
         </div>
       </DialogContent>
-      
-      <OTPLoginDialog
-        open={showOTPLogin}
-        onClose={() => setShowOTPLogin(false)}
-        onLoginSuccess={handleLoginSuccess}
-      />
     </Dialog>
   );
 };

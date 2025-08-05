@@ -6,109 +6,223 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
-
- 
-model Cart {
-  id        String     @id  @default(uuid())
-  userId    String     @unique
-  createdAt DateTime   @default(now())
-  updatedAt DateTime
-  User      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  CartItem  CartItem[]
-
-  @@index([userId])
-}
-
-model CartItem {
-  id        String   @id @default(uuid())
-  cartId    String
-  productId String
-  quantity  Int      @default(1)
-  addedAt   DateTime @default(now())
-  Cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([cartId, productId])
-  @@index([cartId])
-  @@index([productId])
-}
-
-model Order {
-  id              String      @id @default(uuid())
-  userId          String
-  createdAt       DateTime    @default(now())
-  shippingAddress String
-  status          OrderStatus @default(pending)
-  totalAmount     Decimal     @db.Decimal(10, 2)
-  sellerId        String
-  User            User        @relation(fields: [userId], references: [id])
-  OrderItem       OrderItem[]
-
-  @@index([createdAt])
-  @@index([sellerId])
-  @@index([status])
-  @@index([userId])
-}
-
-model OrderItem {
-  id        String   @id @default(uuid())
-  orderId   String
-  productId String
-  quantity  Int
-  unitPrice Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  Order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  Product   Product  @relation(fields: [productId], references: [id])
-
-  @@unique([orderId, productId])
-  @@index([orderId])
-  @@index([productId])
-}
-
-model Product {
-  id            String      @id @default(uuid())
-  name          String
-  description   String?
-  category      Category
-  imageUrl      String?
-  createdAt     DateTime    @default(now())
-  isActive      Boolean     @default(true)
-  price         Decimal     @db.Decimal(10, 2)
-  sellerId      String
-  stockQuantity Int         @default(0)
-  CartItem      CartItem[]
-  OrderItem     OrderItem[]
-  Seller        Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-
-  @@index([category])
-  @@index([isActive])
-  @@index([sellerId])
-}
-
-model Seller {
-  id           String    @id @default(uuid())
-  createdAt    DateTime  @default(now())
-  email        String    @unique
-  phoneNumber  String?
-  password     String
-  businessName String
-  Product      Product[]
-
-  @@index([email])
+  schemas  = ["public"]
 }
 
 model User {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  email       String   @unique
-  phoneNumber String?
-  password    String
-  address     String?
-  Cart        Cart?
-  Order       Order[]
+  id              String            @id @default(uuid()) @db.Uuid
+  email           String            @unique
+  first_name      String?
+  last_name       String?
+  phone_number    String?           @unique(map: "users_phone_number_unique")
+  address         String?
+  date_of_birth   DateTime?         @db.Date
+  is_active       Boolean?          @default(true)
+  created_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  addresses       addresses[]
+  cart_items      cart_items[]
+  orders          orders[]
+  product_reviews product_reviews[]
+  sellers         Seller[]
 
-  @@index([email])
+  @@index([email], map: "idx_users_email")
+  @@index([phone_number], map: "idx_users_phone_number")
+  @@map("users")
+  @@schema("public")
+}
+
+model Seller {
+  id                  String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id             String?    @db.Uuid
+  email               String     @unique
+  business_name       String
+  phone_number        String?
+  business_address    String?
+  verification_status String?    @default("pending")
+  is_active           Boolean?   @default(true)
+  created_at          DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?  @default(now()) @db.Timestamptz(6)
+  orders              orders[]
+  products            products[]
+  users               User?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("sellers")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model addresses {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id        String?   @db.Uuid
+  type           String?   @default("both")
+  first_name     String
+  last_name      String
+  address_line_1 String
+  address_line_2 String?
+  city           String
+  state          String
+  postal_code    String
+  country        String    @default("IN")
+  phone          String?
+  is_default     Boolean?  @default(false)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime? @default(now()) @db.Timestamptz(6)
+  users          User?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_addresses_user_id")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model cart_items {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String?   @db.Uuid
+  product_id String?   @db.Uuid
+  quantity   Int       @default(1)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  products   products? @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      User?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, product_id])
+  @@index([user_id], map: "idx_cart_items_user_id")
+  @@index([user_id, product_id], map: "idx_cart_items_user_product")
+  @@schema("public")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model categories {
+  id               String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name             String
+  slug             String       @unique
+  description      String?
+  parent_id        String?      @db.Uuid
+  image_url        String?
+  is_active        Boolean?     @default(true)
+  sort_order       Int?         @default(0)
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  categories       categories?  @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_categories categories[] @relation("categoriesTocategories")
+  products         products[]
+
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_items {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  order_id        String?           @db.Uuid
+  product_id      String?           @db.Uuid
+  quantity        Int
+  unit_price      Decimal           @db.Decimal(10, 2)
+  total_price     Decimal?          @default(dbgenerated("((quantity)::numeric * unit_price)")) @db.Decimal(10, 2)
+  created_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  orders          orders?           @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products        products?         @relation(fields: [product_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  product_reviews product_reviews[]
+
+  @@index([order_id], map: "idx_order_items_order_id")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model orders {
+  id                 String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  order_number       String        @unique
+  user_id            String?       @db.Uuid
+  seller_id          String?       @db.Uuid
+  subtotal           Decimal       @db.Decimal(10, 2)
+  tax_amount         Decimal?      @default(0.00) @db.Decimal(10, 2)
+  shipping_amount    Decimal?      @default(0.00) @db.Decimal(10, 2)
+  discount_amount    Decimal?      @default(0.00) @db.Decimal(10, 2)
+  total_amount       Decimal       @db.Decimal(10, 2)
+  billing_address    Json
+  shipping_address   Json
+  status             String?       @default("pending")
+  payment_status     String?       @default("pending")
+  fulfillment_status String?       @default("pending")
+  notes              String?
+  tracking_number    String?
+  shipped_at         DateTime?     @db.Timestamptz(6)
+  delivered_at       DateTime?     @db.Timestamptz(6)
+  created_at         DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?     @default(now()) @db.Timestamptz(6)
+  order_items        order_items[]
+  sellers            Seller?       @relation(fields: [seller_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              User?         @relation(fields: [user_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([order_number], map: "idx_orders_order_number")
+  @@index([status], map: "idx_orders_status")
+  @@index([user_id], map: "idx_orders_user_id")
+  @@index([user_id, status], map: "idx_orders_user_status")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model product_reviews {
+  id                   String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  product_id           String?      @db.Uuid
+  user_id              String?      @db.Uuid
+  order_item_id        String?      @db.Uuid
+  rating               Int
+  title                String?
+  content              String?
+  images               String[]
+  is_verified_purchase Boolean?     @default(false)
+  is_published         Boolean?     @default(true)
+  helpful_count        Int?         @default(0)
+  created_at           DateTime?    @default(now()) @db.Timestamptz(6)
+  order_items          order_items? @relation(fields: [order_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products             products?    @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                User?        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, product_id])
+  @@index([product_id], map: "idx_product_reviews_product_id")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model products {
+  id                  String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  seller_id           String?           @db.Uuid
+  category_id         String?           @db.Uuid
+  name                String
+  slug                String            @unique
+  description         String?
+  short_description   String?
+  sku                 String?           @unique
+  price               Decimal           @db.Decimal(10, 2)
+  compare_price       Decimal?          @db.Decimal(10, 2)
+  image_url           String?
+  image_urls          String[]
+  stock_quantity      Int?              @default(0)
+  low_stock_threshold Int?              @default(5)
+  is_active           Boolean?          @default(true)
+  is_featured         Boolean?          @default(false)
+  rating_average      Decimal?          @default(0.0) @db.Decimal(2, 1)
+  rating_count        Int?              @default(0)
+  views_count         Int?              @default(0)
+  sales_count         Int?              @default(0)
+  created_at          DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?         @default(now()) @db.Timestamptz(6)
+  cart_items          cart_items[]
+  order_items         order_items[]
+  product_reviews     product_reviews[]
+  categories          categories?       @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sellers             Seller?           @relation(fields: [seller_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([category_id], map: "idx_products_category_id")
+  @@index([seller_id, is_active], map: "idx_products_seller_active")
+  @@index([seller_id], map: "idx_products_seller_id")
+  @@schema("public")
 }
 
 enum Category {
@@ -118,13 +232,6 @@ enum Category {
   dupatta
   jewelry
   accessories
-}
 
-enum OrderStatus {
-  pending
-  confirmed
-  processing
-  shipped
-  delivered
-  cancelled
+  @@schema("public")
 }

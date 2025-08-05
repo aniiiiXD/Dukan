@@ -6,15 +6,23 @@
     "start": "NODE_ENV=development node index.js",
     "start:prod": "NODE_ENV=production node index.js",
     "build": "echo 'No build step required for Node.js'",
-    "test": "NODE_ENV=test node index.js"
+    "test": "NODE_ENV=test node index.js",
+    "prisma:generate": "dotenv -e .env.development -- npx prisma generate",
+    "prisma:push": "dotenv -e .env.development -- npx prisma db push",
+    "prisma:pull": "dotenv -e .env.development -- npx prisma db pull",
+    "prisma:studio": "dotenv -e .env.development -- npx prisma studio",
+    "prisma:migrate": "dotenv -e .env.development -- npx prisma migrate dev"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
+    "@prisma/client": "^6.13.0",
     "@supabase/supabase-js": "^2.39.0",
-    "dotenv": "^16.3.1"
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "dotenv-cli": "^10.0.0",
+    "nodemon": "^3.0.2",
+    "prisma": "^6.13.0"
   }
 }

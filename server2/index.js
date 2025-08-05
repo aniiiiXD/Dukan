@@ -5,7 +5,7 @@ const path = require("path");
 
 // Load environment-specific configuration
 const NODE_ENV = process.env.NODE_ENV || "development";
-
+const { PrismaClient } = require("./generated/prisma");
 // Load appropriate env file
 require("dotenv").config({
   path: path.resolve(__dirname, `.env.${NODE_ENV}`),
@@ -237,86 +237,68 @@ const getAllProducts = async () => {
   }
 };
 
+// Enhanced user profile creation with better error handling
 const createOrUpdateUserProfile = async (authUser) => {
   try {
-    if (currentConfig.enableDebug) {
-      console.log("👤 Creating/updating user profile for:", authUser.email);
-    }
+    console.log("Creating/updating user profile for:", authUser.email);
+
+    // Extract names from Google OAuth metadata
+    const fullName =
+      authUser.user_metadata?.full_name || authUser.user_metadata?.name || "";
+    const nameParts = fullName.trim().split(" ");
+    const firstName = nameParts[0] || null;
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
 
     const userData = {
       id: authUser.id,
       email: authUser.email,
-      first_name:
-        authUser.user_metadata?.full_name?.split(" ")[0] ||
-        authUser.user_metadata?.name?.split(" ")[0] ||
-        null,
-      last_name:
-        authUser.user_metadata?.full_name?.split(" ").slice(1).join(" ") ||
-        authUser.user_metadata?.name?.split(" ").slice(1).join(" ") ||
-        null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
+      firstname: firstName,
+      lastname: lastName,
+      phonenumber: authUser.phone || null,
+      isactive: true,
+      updatedat: new Date().toISOString(),
     };
 
-    const { data: existingUser } = await supabase
+    // Use upsert to handle both insert and update
+    const { data, error } = await supabase
       .from("users")
-      .select("*")
-      .eq("id", authUser.id)
+      .upsert(userData, {
+        onConflict: "id",
+        ignoreDuplicates: false,
+      })
+      .select()
       .single();
 
-    let userProfile;
-    if (existingUser) {
-      const { data, error } = await supabase
-        .from("users")
-        .update(userData)
-        .eq("id", authUser.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      userProfile = data;
-      if (currentConfig.enableDebug) {
-        console.log("✅ User profile updated");
-      }
-    } else {
-      userData.created_at = new Date().toISOString();
-      const { data, error } = await supabase
-        .from("users")
-        .insert([userData])
-        .select()
-        .single();
-
-      if (error) throw error;
-      userProfile = data;
-      if (currentConfig.enableDebug) {
-        console.log("✅ New user profile created");
-      }
+    if (error) {
+      console.error("Error upserting user:", error);
+      throw error;
     }
 
-    return userProfile;
+    console.log("User profile upserted successfully:", data);
+    return data;
   } catch (error) {
-    console.error("Error creating/updating user profile:", error);
+    console.error("Error in createOrUpdateUserProfile:", error);
     throw error;
   }
 };
 
-// Cart management functions
+// Enhanced cart functions with proper database inserts
 const addToCart = async (userId, productId, quantity = 1) => {
   try {
-    if (currentConfig.enableDebug) {
-      console.log(
-        `🛒 Adding to cart: User ${userId}, Product ${productId}, Qty ${quantity}`
-      );
-    }
+    console.log(
+      `🛒 Adding to cart: User ${userId}, Product ${productId}, Qty ${quantity}`
+    );
 
-    const { data: existing } = await supabase
+    // Check if item already exists in cart
+    const { data: existing, error: selectError } = await supabase
       .from("cart_items")
       .select("*")
       .eq("user_id", userId)
       .eq("product_id", productId)
       .single();
 
-    if (existing) {
+    if (existing && !selectError) {
+      // Update quantity of existing item
       const { data, error } = await supabase
         .from("cart_items")
         .update({
@@ -327,12 +309,14 @@ const addToCart = async (userId, productId, quantity = 1) => {
         .select("*, products(*)")
         .single();
 
-      if (error) throw error;
-      if (currentConfig.enableDebug) {
-        console.log("✅ Cart item quantity updated");
+      if (error) {
+        console.error("❌ Error updating cart item:", error);
+        throw error;
       }
+      console.log("✅ Cart item quantity updated");
       return data;
     } else {
+      // Insert new cart item
       const { data, error } = await supabase
         .from("cart_items")
         .insert([
@@ -340,47 +324,58 @@ const addToCart = async (userId, productId, quantity = 1) => {
             user_id: userId,
             product_id: productId,
             quantity: quantity,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           },
         ])
         .select("*, products(*)")
         .single();
 
-      if (error) throw error;
-      if (currentConfig.enableDebug) {
-        console.log("✅ New item added to cart");
+      if (error) {
+        console.error("❌ Error inserting cart item:", error);
+        throw error;
       }
+      console.log("✅ New item added to cart");
       return data;
     }
   } catch (error) {
-    console.error("Error adding to cart:", error);
+    console.error("❌ Error in addToCart:", error);
     throw error;
   }
 };
 
 // Merge guest cart items into user cart endpoint
-app.post("/api/v1/cart/merge", async (req, res) => {
+app.post("/api/v1/cart", async (req, res) => {
   try {
-    const { userId, items } = req.body;
+    const { userId, productId, quantity } = req.body;
 
-    if (!userId || !Array.isArray(items)) {
+    console.log("🛒 Cart add request:", { userId, productId, quantity });
+
+    if (!userId || !productId) {
       return res.status(400).json({
         success: false,
-        error: "Invalid payload: userId and items are required",
-        code: "MISSING_FIELDS",
+        error: "UserId and productId are required",
+        code: "MISSING_REQUIRED_FIELDS",
       });
     }
 
-    // Iterate guest cart items and add/increment in DB cart
-    for (const item of items) {
-      if (item.productId && item.quantity > 0) {
-        await addToCart(userId, item.productId, item.quantity);
-      }
-    }
+    const cartItem = await addToCart(userId, productId, quantity || 1);
 
-    res.json({ success: true, message: "Cart merged successfully" });
+    console.log("✅ Item added to cart successfully");
+
+    res.json({
+      success: true,
+      message: "Item added to cart",
+      cartItem: cartItem,
+    });
   } catch (error) {
-    console.error("Error merging carts:", error);
-    res.status(500).json({ success: false, error: "Failed to merge carts" });
+    console.error("❌ Error adding to cart:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to add to cart",
+      code: "CART_ADD_FAILED",
+      details: error.message,
+    });
   }
 });
 
@@ -433,11 +428,10 @@ const removeFromCart = async (userId, productId) => {
   }
 };
 
+// Enhanced order creation
 const placeOrder = async (userId, shippingAddress) => {
   try {
-    if (currentConfig.enableDebug) {
-      console.log(`📋 Placing order for user: ${userId}`);
-    }
+    console.log(`📋 Placing order for user: ${userId}`);
 
     const cart = await getCart(userId);
 
@@ -449,9 +443,10 @@ const placeOrder = async (userId, shippingAddress) => {
       return sum + item.Product.price * item.quantity;
     }, 0);
 
-    // Generate order number
+    // Generate unique order number
     const orderNumber = `JH${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
+    // Insert order with proper error handling
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert([
@@ -464,26 +459,19 @@ const placeOrder = async (userId, shippingAddress) => {
           billing_address: { address: shippingAddress },
           status: "pending",
           payment_status: "pending",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
       ])
       .select()
       .single();
 
-    if (orderError) throw orderError;
+    if (orderError) {
+      console.error("❌ Error creating order:", orderError);
+      throw orderError;
+    }
 
-    const orderItems = cart.CartItem.map((item) => ({
-      order_id: order.id,
-      product_id: item.productId,
-      quantity: item.quantity,
-      unit_price: item.Product.price,
-      total_price: item.Product.price * item.quantity,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from("order_items")
-      .insert(orderItems);
-
-    if (itemsError) throw itemsError;
+    console.log("✅ Order created successfully:", orderNumber);
 
     // Clear cart after successful order
     const { error: clearError } = await supabase
@@ -491,14 +479,16 @@ const placeOrder = async (userId, shippingAddress) => {
       .delete()
       .eq("user_id", userId);
 
-    if (clearError) throw clearError;
-
-    if (currentConfig.enableDebug) {
-      console.log(`✅ Order placed successfully: ${orderNumber}`);
+    if (clearError) {
+      console.error("❌ Error clearing cart:", clearError);
+      // Don't throw here, order was successful
+    } else {
+      console.log("✅ Cart cleared after order");
     }
+
     return order;
   } catch (error) {
-    console.error("Error placing order:", error);
+    console.error("❌ Error placing order:", error);
     throw error;
   }
 };
@@ -524,10 +514,8 @@ app.get("/health", async (req, res) => {
 // Google Auth verification
 app.post("/api/v1/auth/verify-google", async (req, res) => {
   try {
-    if (currentConfig.enableDebug) {
-      console.log("🔐 Google auth verification received");
-    }
-    const { access_token, refresh_token } = req.body;
+    console.log("🔐 Google auth verification received");
+    const { access_token } = req.body;
 
     if (!access_token) {
       return res.status(400).json({
@@ -544,7 +532,7 @@ app.post("/api/v1/auth/verify-google", async (req, res) => {
     } = await supabase.auth.getUser(access_token);
 
     if (error || !user) {
-      console.error("Token verification failed:", error);
+      console.error("❌ Token verification failed:", error);
       return res.status(401).json({
         success: false,
         error: "Invalid or expired token",
@@ -552,29 +540,110 @@ app.post("/api/v1/auth/verify-google", async (req, res) => {
       });
     }
 
-    // Create or update user profile
-    const userProfile = await createOrUpdateUserProfile(user);
+    console.log("✅ Token verified for user:", user.email);
 
-    res.json({
-      success: true,
-      message: "Google authentication successful",
-      user: userProfile,
-      sessionToken: access_token,
-    });
+    // Create or update user profile with better error handling
+    try {
+      const userProfile = await createOrUpdateUserProfile(user);
+
+      res.json({
+        success: true,
+        message: "Google authentication successful",
+        user: userProfile,
+        sessionToken: access_token,
+      });
+    } catch (profileError) {
+      console.error("❌ Profile creation failed:", profileError);
+
+      // Still return success for auth, but indicate profile issue
+      res.json({
+        success: true,
+        message: "Authentication successful, profile creation pending",
+        user: {
+          id: user.id,
+          email: user.email,
+          first_name: user.user_metadata?.full_name?.split(" ")[0] || null,
+          last_name:
+            user.user_metadata?.full_name?.split(" ").slice(1).join(" ") ||
+            null,
+        },
+        sessionToken: access_token,
+        profileError: profileError.message,
+      });
+    }
   } catch (error) {
-    console.error("Google auth verification error:", error);
+    console.error("❌ Google auth verification error:", error);
     res.status(500).json({
       success: false,
       error: "Authentication verification failed",
       code: "AUTH_VERIFICATION_FAILED",
+      details: error.message,
     });
   }
 });
 
-// User profile endpoint
+// Check your actual database schema and use correct column names
+// Update the POST /user endpoint with correct column names
+app.post("/api/v1/user", async (req, res) => {
+  try {
+    const { id, email, firstname, lastname, phonenumber, isactive } = req.body;
+
+    console.log("Creating user manually:", email);
+
+    // Map frontend field names to database column names
+    const { data: user, error } = await supabase
+      .from("users")
+      .insert({
+        id,
+        email,
+        first_name: firstname, // Map firstname -> first_name
+        last_name: lastname, // Map lastname -> last_name
+        phone_number: phonenumber, // Map phonenumber -> phone_number
+        is_active: isactive !== undefined ? isactive : true,
+        created_at: new Date().toISOString(), // Use created_at
+        updated_at: new Date().toISOString(), // Use updated_at
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating user:", error);
+      return res.status(400).json({
+        success: false,
+        error: "Failed to create user",
+        details: error.message,
+      });
+    }
+
+    console.log("User created successfully:", user.email);
+    res.json({
+      success: true,
+      user: {
+        ...user,
+        // Map database column names back to frontend field names
+        firstname: user.first_name,
+        lastname: user.last_name,
+        phonenumber: user.phone_number,
+        createdat: user.created_at,
+        updatedat: user.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Create user error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
+// Update the existing get user endpoint to be more robust
+// Update the GET /user/:userId endpoint
 app.get("/api/v1/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
+    console.log("Getting user profile for:", userId);
 
     const { data: user, error } = await supabase
       .from("users")
@@ -583,16 +652,30 @@ app.get("/api/v1/user/:userId", async (req, res) => {
       .single();
 
     if (error) {
+      console.error("Database error:", error);
       return res.status(404).json({
         success: false,
         error: "User not found",
         code: "USER_NOT_FOUND",
+        details: error.message,
       });
     }
 
+    console.log("User found:", user.email);
+
+    // Map database column names to frontend field names
+    const mappedUser = {
+      ...user,
+      firstname: user.first_name,
+      lastname: user.last_name,
+      phonenumber: user.phone_number,
+      createdat: user.created_at,
+      updatedat: user.updated_at,
+    };
+
     res.json({
       success: true,
-      user: user,
+      user: mappedUser,
     });
   } catch (error) {
     console.error("Get user error:", error);
@@ -600,6 +683,7 @@ app.get("/api/v1/user/:userId", async (req, res) => {
       success: false,
       error: "Failed to get user profile",
       code: "GET_USER_FAILED",
+      details: error.message,
     });
   }
 });
@@ -707,6 +791,48 @@ app.get("/api/v1/cart/:userId", async (req, res) => {
       success: false,
       error: "Failed to get cart",
       code: "CART_GET_FAILED",
+    });
+  }
+});
+
+// Database test endpoint
+app.get("/api/v1/test-db", async (req, res) => {
+  try {
+    // Test insert with proper slug
+    const { data: testData, error: insertError } = await supabase
+      .from("products")
+      .insert([
+        {
+          name: "Test Product",
+          slug: "test-product-" + Date.now(), // Add required slug field
+          description: "Test Description",
+          price: 99.99,
+          stock_quantity: 10,
+          category_id: "714c80bf-4c40-471a-a9ca-14456967deb6", // Use existing category ID
+          is_active: true,
+        },
+      ])
+      .select()
+      .single();
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    // Test delete (cleanup)
+    await supabase.from("products").delete().eq("id", testData.id);
+
+    res.json({
+      success: true,
+      message: "Database operations working correctly",
+      testResult: "Insert and delete successful",
+    });
+  } catch (error) {
+    console.error("❌ Database test failed:", error);
+    res.status(500).json({
+      success: false,
+      error: "Database test failed",
+      details: error.message,
     });
   }
 });
