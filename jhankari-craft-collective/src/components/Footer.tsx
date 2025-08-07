@@ -17,15 +17,15 @@ const Footer = () => {
               Preserving the rich heritage of Rajasthani craftsmanship through exquisite handwoven clothing that celebrates tradition and elegance.
             </p>
             <div className="flex space-x-3">
-              <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
+              {/* <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Facebook className="h-5 w-5" />
-              </Button>
+              </Button> */}
               <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Instagram className="h-5 w-5" />
               </Button>
-              <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
+              {/* <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Twitter className="h-5 w-5" />
-              </Button>
+              </Button> */}
             </div>
           </div>
 
@@ -76,11 +76,11 @@ const Footer = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div className="flex items-center gap-2">
               <Phone className="h-4 w-4 text-royal-gold" />
-              <span className="text-royal-cream/80">+91 98765 43210</span>
+              <span className="text-royal-cream/80">+91 6900528005</span>
             </div>
             <div className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-royal-gold" />
-              <span className="text-royal-cream/80">hello@jhankari.com</span>
+              <span className="text-royal-cream/80">help.jhankari@gmail.com</span>
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-royal-gold" />

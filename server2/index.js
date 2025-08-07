@@ -962,8 +962,15 @@ app.get("/api/v1/cart/:userId", async (req, res) => {
 // ==========================================
 
 // Orders endpoint for payment integration (POST /api/v1/orders)
+// Orders endpoint for payment integration (POST /api/v1/orders)
 app.post("/api/v1/orders", async (req, res) => {
   console.log("🎯 Creating order with payment integration");
+  console.log("📋 Request body validation:", {
+    hasItems: !!req.body.items,
+    hasBillingAddress: !!req.body.billingAddress,
+    hasEmail: !!req.body.email,
+    totalAmount: req.body.totalAmount,
+  });
 
   try {
     const {
@@ -983,22 +990,7 @@ app.post("/api/v1/orders", async (req, res) => {
         error: "Missing required fields",
         details:
           "billingAddress, phoneNumber, email, items, and totalAmount are required",
-      });
-    }
-
-    // Check if Razorpay credentials are properly configured
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.log("⚠️ Razorpay credentials not configured properly");
-      console.log("RAZORPAY_KEY_ID exists:", !!process.env.RAZORPAY_KEY_ID);
-      console.log(
-        "RAZORPAY_KEY_SECRET exists:",
-        !!process.env.RAZORPAY_KEY_SECRET
-      );
-
-      return res.status(500).json({
-        success: false,
-        error: "Payment service configuration error. Please contact support.",
-        code: "PAYMENT_SERVICE_CONFIG_ERROR",
+        code: "VALIDATION_ERROR",
       });
     }
 
@@ -1012,7 +1004,45 @@ app.post("/api/v1/orders", async (req, res) => {
       });
     }
 
-    // Initialize Razorpay
+    // Debug Razorpay credentials
+    console.log("🔑 Razorpay Configuration Check:");
+    console.log("RAZORPAY_KEY_ID exists:", !!process.env.RAZORPAY_KEY_ID);
+    console.log(
+      "RAZORPAY_KEY_SECRET exists:",
+      !!process.env.RAZORPAY_KEY_SECRET
+    );
+
+    if (process.env.RAZORPAY_KEY_ID) {
+      console.log(
+        "RAZORPAY_KEY_ID preview:",
+        process.env.RAZORPAY_KEY_ID.substring(0, 12) + "..."
+      );
+    }
+
+    // Check if Razorpay credentials are properly configured
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error(
+        "❌ Razorpay credentials are missing from environment variables"
+      );
+      return res.status(500).json({
+        success: false,
+        error: "Payment service configuration error. Please contact support.",
+        details: "Razorpay credentials not configured",
+        code: "PAYMENT_SERVICE_CONFIG_ERROR",
+      });
+    }
+
+    // Validate credentials format
+    if (!process.env.RAZORPAY_KEY_ID.startsWith("rzp_")) {
+      console.error("❌ Invalid Razorpay Key ID format");
+      return res.status(500).json({
+        success: false,
+        error: "Invalid payment service configuration.",
+        code: "INVALID_RAZORPAY_KEY_FORMAT",
+      });
+    }
+
+    // Initialize Razorpay with enhanced error handling
     const Razorpay = require("razorpay");
     let razorpay;
 
@@ -1027,11 +1057,12 @@ app.post("/api/v1/orders", async (req, res) => {
       return res.status(500).json({
         success: false,
         error: "Payment service initialization failed",
+        details: razorpayInitError.message,
         code: "RAZORPAY_INIT_ERROR",
       });
     }
 
-    // Create Razorpay order
+    // Create Razorpay order with comprehensive error handling
     console.log("💳 Creating Razorpay order...");
 
     const orderOptions = {
@@ -1047,9 +1078,16 @@ app.post("/api/v1/orders", async (req, res) => {
       },
     };
 
+    console.log("📦 Order creation options:", {
+      amount: orderOptions.amount,
+      currency: orderOptions.currency,
+      receipt: orderOptions.receipt,
+      notes_count: Object.keys(orderOptions.notes).length,
+    });
+
     try {
       const razorpayOrder = await razorpay.orders.create(orderOptions);
-      console.log("✅ Razorpay order created:", razorpayOrder.id);
+      console.log("✅ Razorpay order created successfully:", razorpayOrder.id);
 
       // Store order in database
       const orderData = {
@@ -1078,34 +1116,90 @@ app.post("/api/v1/orders", async (req, res) => {
         currency: razorpayOrder.currency,
         key_id: process.env.RAZORPAY_KEY_ID,
       });
-    } catch (razorpayError) {
-      console.error("❌ Razorpay API error:", razorpayError);
+    } catch (razorpayApiError) {
+      console.error("❌ Razorpay API error details:", {
+        statusCode: razorpayApiError.statusCode,
+        error: razorpayApiError.error,
+        message: razorpayApiError.message,
+      });
 
       let errorMessage =
         "Payment service temporarily unavailable. Please try again.";
       let errorCode = "RAZORPAY_API_ERROR";
 
-      if (razorpayError.statusCode === 400) {
-        errorMessage = "Invalid payment details. Please check and try again.";
-        errorCode = "INVALID_PAYMENT_DATA";
-      } else if (razorpayError.statusCode === 401) {
-        errorMessage =
-          "Payment service authentication failed. Please contact support.";
-        errorCode = "PAYMENT_AUTH_ERROR";
+      // Enhanced error handling based on Razorpay error types
+      if (razorpayApiError.statusCode) {
+        switch (razorpayApiError.statusCode) {
+          case 400:
+            errorMessage =
+              "Invalid payment details. Please check and try again.";
+            errorCode = "BAD_REQUEST_ERROR";
+
+            // Check specific 400 error reasons
+            if (
+              razorpayApiError.error?.description?.includes(
+                "Amount exceeds maximum"
+              )
+            ) {
+              errorMessage =
+                "Order amount exceeds maximum limit for test mode (₹50,000).";
+              errorCode = "AMOUNT_LIMIT_EXCEEDED";
+            } else if (razorpayApiError.error?.description?.includes("emoji")) {
+              errorMessage =
+                "Invalid characters in order details. Please remove special characters.";
+              errorCode = "INVALID_CHARACTERS";
+            }
+            break;
+
+          case 401:
+            errorMessage =
+              "Payment service authentication failed. Please contact support.";
+            errorCode = "AUTHENTICATION_ERROR";
+            break;
+
+          case 500:
+            errorMessage =
+              "Payment service internal error. Please try again in a few minutes.";
+            errorCode = "INTERNAL_SERVER_ERROR";
+            break;
+
+          default:
+            errorMessage = `Payment service error (${razorpayApiError.statusCode}). Please try again.`;
+        }
+      }
+
+      // Log the full error for debugging
+      if (razorpayApiError.error) {
+        console.error(
+          "Full Razorpay error:",
+          JSON.stringify(razorpayApiError.error, null, 2)
+        );
       }
 
       return res.status(500).json({
         success: false,
         error: errorMessage,
         code: errorCode,
+        ...(currentConfig?.enableDebug && {
+          debug: {
+            razorpayStatusCode: razorpayApiError.statusCode,
+            razorpayError:
+              razorpayApiError.error?.description || razorpayApiError.message,
+          },
+        }),
       });
     }
   } catch (error) {
-    console.error("❌ Error creating order:", error);
+    console.error("❌ Unexpected error creating order:", error);
+    console.error("Error stack:", error.stack);
+
     res.status(500).json({
       success: false,
       error: "Failed to create order. Please try again.",
       code: "ORDER_CREATION_FAILED",
+      ...(currentConfig?.enableDebug && {
+        details: error.message,
+      }),
     });
   }
 });
