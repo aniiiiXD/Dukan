@@ -1,72 +1,134 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import Razorpay from "razorpay";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
 export async function POST(request) {
-  const cookieStore = cookies();
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
-    const body = await request.json();
     const {
       items,
-      billing_address,
-      shipping_address,
-      subtotal,
-      tax_amount,
-      shipping_amount,
-      total_amount,
-    } = body;
+      billingAddress,
+      shippingAddress,
+      phoneNumber,
+      email,
+      totalAmount,
+      paymentMethod = "razorpay",
+    } = await request.json();
 
-    // Generate order number
-    const order_number = `ORD-${Date.now()}`;
+    // Validate required fields
+    if (!billingAddress || !phoneNumber || !email || !items || !totalAmount) {
+      return Response.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
 
-    // Create order
-    const { data: order, error: orderError } = await supabase
+    // Create Razorpay order
+    const razorpayOrder = await razorpay.orders.create({
+      amount: totalAmount * 100, // Amount in paise
+      currency: "INR",
+      receipt: `order_${Date.now()}`,
+      notes: {
+        customer_email: email,
+        customer_phone: phoneNumber,
+      },
+    });
+
+    // Store order in database
+    const { data: order, error } = await supabase
       .from("orders")
       .insert({
-        order_number,
-        user_id: user.id,
-        seller_id: items[0].seller_id, // Assuming single seller for now
-        subtotal,
-        tax_amount,
-        shipping_amount,
-        total_amount,
-        billing_address,
-        shipping_address,
+        razorpay_order_id: razorpayOrder.id,
+        customer_email: email,
+        customer_phone: phoneNumber,
+        billing_address: billingAddress,
+        shipping_address: shippingAddress,
+        items: items,
+        total_amount: totalAmount,
+        payment_method: paymentMethod,
         status: "pending",
-        payment_status: "pending",
+        created_at: new Date().toISOString(),
       })
       .select()
       .single();
 
-    if (orderError) throw orderError;
+    if (error) {
+      console.error("Database error:", error);
+      return Response.json(
+        { error: "Failed to create order" },
+        { status: 500 }
+      );
+    }
 
-    // Create order items
-    const orderItems = items.map((item) => ({
-      order_id: order.id,
-      product_id: item.product_id,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      total_price: item.quantity * item.unit_price,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from("order_items")
-      .insert(orderItems);
-
-    if (itemsError) throw itemsError;
-
-    return NextResponse.json({ success: true, order });
+    return Response.json({
+      success: true,
+      order: order,
+      razorpay_order_id: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      key_id: process.env.RAZORPAY_KEY_ID,
+    });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Order creation error:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// Handle payment verification
+export async function PUT(request) {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+      await request.json();
+
+    // Verify payment signature
+    const crypto = require("crypto");
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      return Response.json(
+        { error: "Payment verification failed" },
+        { status: 400 }
+      );
+    }
+
+    // Update order status
+    const { data: updatedOrder, error } = await supabase
+      .from("orders")
+      .update({
+        razorpay_payment_id: razorpay_payment_id,
+        payment_signature: razorpay_signature,
+        status: "paid",
+        paid_at: new Date().toISOString(),
+      })
+      .eq("razorpay_order_id", razorpay_order_id)
+      .select()
+      .single();
+
+    if (error) {
+      return Response.json(
+        { error: "Failed to update order" },
+        { status: 500 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      order: updatedOrder,
+    });
+  } catch (error) {
+    console.error("Payment verification error:", error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,4 @@
 // src/utils/cart.ts
-
 export interface GuestCartItem {
   productId: string;
   quantity: number;
@@ -17,33 +16,48 @@ export function getGuestCart(): GuestCartItem[] {
   }
 }
 
-export function setGuestCart(items: GuestCartItem[]) {
+export function setGuestCart(items: GuestCartItem[]): void {
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
 }
 
-export function clearGuestCart() {
+export function clearGuestCart(): void {
   localStorage.removeItem(CART_STORAGE_KEY);
 }
 
-export function addOrUpdateGuestCartItem(productId: string, quantity: number) {
+// Add this missing function
+export function addGuestCartItem(productId: string, quantity: number = 1): void {
   const cart = getGuestCart();
-  const idx = cart.findIndex(item => item.productId === productId);
-
-  if (idx !== -1) {
-    cart[idx].quantity += quantity;
+  const existingItem = cart.find(item => item.productId === productId);
+  
+  if (existingItem) {
+    existingItem.quantity += quantity;
   } else {
     cart.push({ productId, quantity });
   }
+  
   setGuestCart(cart);
 }
 
-export function removeGuestCartItem(productId: string) {
+export function addOrUpdateGuestCartItem(productId: string, quantity: number): void {
+  const cart = getGuestCart();
+  const idx = cart.findIndex(item => item.productId === productId);
+  
+  if (idx !== -1) {
+    cart[idx].quantity = quantity;
+  } else {
+    cart.push({ productId, quantity });
+  }
+  
+  setGuestCart(cart);
+}
+
+export function removeGuestCartItem(productId: string): void {
   const cart = getGuestCart();
   const updatedCart = cart.filter(item => item.productId !== productId);
   setGuestCart(updatedCart);
 }
 
-export function updateGuestCartItemQuantity(productId: string, quantity: number) {
+export function updateGuestCartItemQuantity(productId: string, quantity: number): void {
   const cart = getGuestCart();
   const idx = cart.findIndex(item => item.productId === productId);
   
