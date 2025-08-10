@@ -1,212 +1,138 @@
-// ==========================================
-// IMPORTS & TYPE DEFINITIONS
-// ==========================================
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getSupabaseClient } from '@/config/supabase';
-import { apiClient } from '@/config/api';
-import {
-  getGuestCart,
-  clearGuestCart,
-  GuestCartItem
-} from '@/utils/cart';
-
-// ==========================================
-// SUPABASE CLIENT INITIALIZATION
-// ==========================================
-const supabase = getSupabaseClient();
-
-// ==========================================
-// TYPE DEFINITIONS
-// ==========================================
-interface User {
-  id: string;
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  phone_number?: string;
-  address?: string;
-  firstname?: string; // For backward compatibility
-  lastname?: string;  // For backward compatibility
-  phonenumber?: string; // For backward compatibility
-}
+import { createContext, useContext, useEffect, useState } from 'react'
+import { User, Session } from '@supabase/supabase-js'
+import { supabase } from '../config/supabase'
+import { useToast } from '../hooks/use-toast'
 
 interface AuthContextType {
-  user: User | null;
-  session: any;
-  isAuthenticated: boolean;
-  loading: boolean;
-  signInWithGoogle: () => Promise<boolean>;
-  logout: () => Promise<void>;
+  user: User | null
+  session: Session | null
+  loading: boolean
+  signInWithGoogle: () => Promise<boolean>
+  signOut: () => Promise<void>
+  refreshAuth: () => Promise<void>
 }
 
-// ==========================================
-// CONTEXT CREATION
-// ==========================================
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// ==========================================
-// AUTH PROVIDER COMPONENT
-// ==========================================
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // ==========================================
-  // STATE MANAGEMENT
-  // ==========================================
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [hasMergedCart, setHasMergedCart] = useState(false);
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
 
-  // ==========================================
-  // USER PROFILE MANAGEMENT FUNCTIONS
-  // ==========================================
-  const createUserProfileManually = useCallback(async (userId: string) => {
+  // Function to manually refresh auth state
+  const refreshAuth = async () => {
     try {
-      console.log('🔧 Creating user profile manually for:', userId);
-
-      // Get user data from Supabase auth
-      const { data: authUser, error: authError } = await supabase.auth.getUser();
+      console.log('🔄 Manually refreshing auth state...')
+      const { data: { session: currentSession }, error } = await supabase.auth.getSession()
       
-      if (authError || !authUser.user) {
-        console.error('Could not get auth user:', authError);
-        return;
-      }
-
-      // Extract user data from auth metadata
-      const email = authUser.user.email;
-      const metadata = authUser.user.user_metadata || {};
-      
-      const userData = {
-        id: userId,
-        email: email,
-        firstname: metadata.full_name?.split(' ')[0] || metadata.name?.split(' ')[0] || 'User',
-        lastname: metadata.full_name?.split(' ').slice(1).join(' ') || metadata.name?.split(' ').slice(1).join(' ') || '',
-        phonenumber: metadata.phone || '',
-        isactive: true,
-        createdat: new Date().toISOString(),
-        updatedat: new Date().toISOString()
-      };
-
-      // Create user via backend API
-      const response = await apiClient.post('/user', userData);
-      
-      if (response.data.success) {
-        setUser(response.data.user);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        console.log('✅ User profile created manually:', response.data.user.email);
+      if (error) {
+        console.error('❌ Error refreshing session:', error)
+      } else if (currentSession) {
+        console.log('✅ Session refreshed successfully:', currentSession.user.email)
+        setSession(currentSession)
+        setUser(currentSession.user)
+      } else {
+        console.log('🔍 No session found during refresh')
+        setSession(null)
+        setUser(null)
       }
     } catch (error) {
-      console.error('❌ Manual user creation failed:', error);
+      console.error('❌ Auth refresh error:', error)
     }
-  }, []);
+  }
 
-  const loadUserProfile = useCallback(async (userId: string) => {
-    try {
-      // Add delay to allow database trigger to complete
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log('📋 Loading user profile for:', userId);
-      const response = await apiClient.get(`/user/${userId}`);
-      
-      if (response.data.success) {
-        setUser(response.data.user);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        console.log('✅ User profile loaded from API:', response.data.user.email);
-        return;
-      }
-    } catch (error) {
-      console.error('❌ Error loading user profile from API:', error);
-      
-      // Fallback: Try direct Supabase query
+  useEffect(() => {
+    console.log('🔍 AuthContext initializing...')
+    
+    // Get initial session
+    const getInitialSession = async () => {
       try {
-        console.log('🔄 Trying fallback Supabase query...');
-        const { data: userData, error: dbError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (dbError) {
-          console.error('Supabase query error:', dbError);
-          // If user doesn't exist, create manually
-          await createUserProfileManually(userId);
-          return;
+        setLoading(true)
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('❌ Error getting initial session:', error)
+        } else if (initialSession) {
+          console.log('✅ Found existing session:', initialSession.user.email)
+          setSession(initialSession)
+          setUser(initialSession.user)
+        } else {
+          console.log('🔍 Initial session check: No session')
         }
-
-        if (userData) {
-          setUser(userData);
-          localStorage.setItem('user', JSON.stringify(userData));
-          console.log('✅ User profile loaded from Supabase fallback:', userData.email);
-        }
-      } catch (dbError) {
-        console.error('❌ Fallback query failed:', dbError);
-        // Last resort: create user manually
-        await createUserProfileManually(userId);
+      } catch (error) {
+        console.error('❌ Session check error:', error)
+      } finally {
+        setLoading(false)
       }
     }
-  }, [createUserProfileManually]);
 
-  // ==========================================
-  // CART MANAGEMENT FUNCTIONS
-  // ==========================================
-  const tryMergeGuestCart = useCallback(async () => {
-    if (!user || !user.id || hasMergedCart) return;
+    getInitialSession()
 
-    try {
-      console.log('🛒 Merging guest cart...');
-      
-      const guestCartItems = getGuestCart();
-      
-      if (!guestCartItems || guestCartItems.length === 0) {
-        console.log('No guest cart items to merge');
-        setHasMergedCart(true);
-        return;
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔄 Auth state changed:', event, session?.user?.email || 'No user')
+        
+        setSession(session)
+        setUser(session?.user ?? null)
+        setLoading(false)
+
+        if (event === 'SIGNED_IN' && session) {
+          console.log('✅ User signed in successfully:', session.user.email)
+          
+          // Show success toast
+          toast({
+            title: "Welcome back!",
+            description: `Signed in as ${session.user.email}`,
+          })
+          
+        } else if (event === 'SIGNED_OUT') {
+          console.log('👋 User signed out')
+          
+          // Clear local state
+          setSession(null)
+          setUser(null)
+          
+          toast({
+            title: "Signed out",
+            description: "You have been signed out successfully",
+          })
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          console.log('🔄 Token refreshed for user:', session.user.email)
+          setSession(session)
+          setUser(session.user)
+        }
       }
+    )
 
-      console.log(`Merging ${guestCartItems.length} guest cart items`);
-
-      // Make the merge request with proper data structure
-      const response = await apiClient.post('/cart/merge', {
-        userId: user.id,
-        guestCartItems: guestCartItems
-      });
-
-      if (response.data.success) {
-        console.log('✅ Guest cart merged successfully');
-        clearGuestCart();
-        setHasMergedCart(true);
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Failed to merge guest cart:', error);
-      
-      // Set merged to true even on error to prevent infinite loops
-      setHasMergedCart(true);
-      
-      // Don't show error to user if it's just an empty cart issue
-      if (error.response?.data?.code !== 'MISSING_REQUIRED_FIELDS') {
-        console.error('Unexpected cart merge error:', error.response?.data);
+    // Also listen for storage changes (for cross-tab auth sync)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'supabase.auth.token') {
+        console.log('🔄 Auth storage changed, refreshing...')
+        refreshAuth()
       }
     }
-  }, [user, hasMergedCart]);
 
-  // ==========================================
-  // AUTHENTICATION FUNCTIONS
-  // ==========================================
+    window.addEventListener('storage', handleStorageChange)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [toast])
+
   const signInWithGoogle = async (): Promise<boolean> => {
     try {
       console.log('🔄 Initiating Google sign-in...')
       
-      // Use production domain or localhost for redirect
-      const redirectTo = import.meta.env.PROD 
-        ? 'https://jhankari.com/auth/callback'
-        : `${window.location.origin}/auth/callback`
-      
+      const redirectTo = `${window.location.origin}/auth/callback`
       console.log('🌐 Redirect URL:', redirectTo)
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectTo,
+          redirectTo,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -216,6 +142,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('❌ Google sign in error:', error)
+        toast({
+          title: "Login failed",
+          description: error.message || "Failed to initiate Google login",
+          variant: "destructive"
+        })
         return false
       }
 
@@ -223,110 +154,127 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return true
     } catch (error) {
       console.error('❌ Google sign in failed:', error)
+      toast({
+        title: "Login failed",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      })
       return false
     }
   }
 
-
-  const logout = useCallback(async () => {
+  const signOut = async (): Promise<void> => {
     try {
-      console.log('🔓 Logging out user...');
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-      setHasMergedCart(false);
-      localStorage.removeItem('user');
-      console.log('✅ User logged out successfully');
-    } catch (error) {
-      console.error('❌ Logout error:', error);
-    }
-  }, []);
-
-  // ==========================================
-  // AUTH STATE EFFECTS
-  // ==========================================
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('🔍 Initial session check:', session?.user?.email || 'No session');
-      setSession(session);
-      if (session?.user) {
-        loadUserProfile(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    // Listen for auth changes  
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔄 Auth state changed:', event, session?.user?.email || 'No user');
-      setSession(session);
-      setHasMergedCart(false); // Reset cart merge status on auth change
+      console.log('🔄 Signing out...')
+      setLoading(true)
       
-      if (session?.user) {
-        // Delay loading for sign-in events to allow backend triggers to complete
-        const delay = event === 'SIGNED_IN' ? 3000 : 1000;
-        setTimeout(() => {
-          loadUserProfile(session.user.id);
-        }, delay);
+      // Try to get current session first
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      
+      if (currentSession) {
+        // If session exists, attempt to sign out
+        try {
+          const { error } = await supabase.auth.signOut({ scope: 'local' })
+          
+          if (error) {
+            // These errors are common with OAuth and can be safely ignored
+            if (error.message.includes('Auth session missing') || 
+                error.message.includes('session_not_found')) {
+              console.log('ℹ️ Session already cleared on server (this is normal)')
+            } else {
+              console.warn('⚠️ Sign out API warning (continuing anyway):', error.message)
+            }
+          } else {
+            console.log('✅ Server sign out successful')
+          }
+        } catch (serverError: any) {
+          // Suppress common OAuth errors but log unexpected ones
+          if (!serverError.message?.includes('Auth session missing')) {
+            console.warn('⚠️ Server sign out issue (continuing with local cleanup):', serverError.message)
+          }
+        }
       } else {
-        setUser(null);
-        localStorage.removeItem('user');
+        console.log('ℹ️ No active session found, clearing local state only')
       }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [loadUserProfile]);
-
-  // ==========================================
-  // CART MERGE EFFECT
-  // ==========================================
-  useEffect(() => {
-    if (session?.user && user && !hasMergedCart) {
-      // Small delay to ensure user profile is loaded
-      const timer = setTimeout(() => {
-        tryMergeGuestCart();
-      }, 500);
-
-      return () => clearTimeout(timer);
+      
+      // Always clear local state regardless of server response
+      setSession(null)
+      setUser(null)
+      
+      // Clear any stored auth data
+      if (typeof window !== 'undefined') {
+        try {
+          // Clear Supabase auth data
+          localStorage.removeItem('supabase.auth.token')
+          
+          // Clear any other auth-related storage
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('supabase.auth')) {
+              localStorage.removeItem(key)
+            }
+          })
+          
+          // Clear session storage
+          sessionStorage.clear()
+        } catch (storageError) {
+          console.log('ℹ️ Storage cleanup completed')
+        }
+      }
+      
+      console.log('✅ User signed out successfully')
+      
+    } catch (error: any) {
+      // Only log unexpected errors
+      if (!error.message?.includes('Auth session missing')) {
+        console.error('❌ Unexpected sign out error:', error)
+      }
+      
+      // Still clear local state even if there are errors
+      setSession(null)
+      setUser(null)
+      
+      // Clear stored data
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('supabase.auth.token')
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('supabase.auth')) {
+              localStorage.removeItem(key)
+            }
+          })
+          sessionStorage.clear()
+        } catch {
+          // Silent cleanup
+        }
+      }
+      
+      console.log('✅ Local state cleared despite server issues')
+      
+    } finally {
+      setLoading(false)
     }
-  }, [session, user, hasMergedCart, tryMergeGuestCart]);
+  }
 
-  // ==========================================
-  // CONTEXT VALUE
-  // ==========================================
-  const contextValue: AuthContextType = {
+  const value = {
     user,
     session,
-    isAuthenticated: !!session?.user,
     loading,
     signInWithGoogle,
-    logout,
-  };
+    signOut,
+    refreshAuth
+  }
 
-  // ==========================================
-  // RENDER PROVIDER
-  // ==========================================
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
-// ==========================================
-// CUSTOM HOOK
-// ==========================================
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
   }
-  return context;
-};
-
-// ==========================================
-// UTILITY EXPORTS
-// ==========================================
-export { supabase };
-export type { User, AuthContextType };
+  return context
+}

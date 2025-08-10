@@ -5,42 +5,26 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import CartDialog from './CartDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { getGuestCart } from '@/utils/cart';
+import { useCart } from '@/contexts/CartContext';
 
 const Header = () => { 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [cartCount, setCartCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const { user, logout, loading, isAuthenticated, signInWithGoogle } = useAuth();
+  const { user, session, loading, signInWithGoogle, signOut } = useAuth();
+  const { totalItems } = useCart();
 
-  // Update cart count when cart changes
+  // Add debug logging
   useEffect(() => {
-    const updateCartCount = () => {
-      if (isAuthenticated && user) {
-        // For authenticated users, you might want to fetch from API
-        // For now, we'll use localStorage as fallback
-        const guestCart = getGuestCart();
-        const count = guestCart.reduce((sum, item) => sum + item.quantity, 0);
-        setCartCount(count);
-      } else {
-        // For guests, use localStorage
-        const guestCart = getGuestCart();
-        const count = guestCart.reduce((sum, item) => sum + item.quantity, 0);
-        setCartCount(count);
-      }
-    };
-
-    updateCartCount();
-    
-    // Listen for cart updates
-    const handleStorageChange = () => updateCartCount();
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [isAuthenticated, user]);
+    console.log('🔍 Header - Auth state:', { 
+      user: user?.email, 
+      session: !!session, 
+      loading 
+    });
+  }, [user, session, loading]);
 
   const handleGoogleLogin = async () => {
     try {
+      console.log('🔄 Initiating Google sign-in from header...');
       const success = await signInWithGoogle();
       if (!success) {
         console.error('Google login failed');
@@ -50,20 +34,22 @@ const Header = () => {
     }
   };
 
-  const handleLogout = async () => {
+  const handleSignOut = async () => {
     try {
-      await logout();
-      setCartCount(0); // Reset cart count on logout
+      console.log('🔄 Signing out user...');
+      await signOut();
+      console.log('✅ User signed out successfully');
+      
+      // Close mobile menu if open
+      setIsMenuOpen(false);
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('❌ Sign out error:', error);
     }
   };
 
   const handleCartUpdate = () => {
-    // Trigger cart count update
-    const guestCart = getGuestCart();
-    const count = guestCart.reduce((sum, item) => sum + item.quantity, 0);
-    setCartCount(count);
+    // This function is called when cart is updated
+    console.log('🛒 Cart updated, total items:', totalItems);
   };
 
   return (
@@ -114,46 +100,38 @@ const Header = () => {
 
             {/* Auth Section */}
             {loading ? (
-              <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>
-            ) : isAuthenticated && user ? (
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-royal-purple/10">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-royal-purple to-royal-crimson flex items-center justify-center">
-                    <span className="text-white text-sm font-semibold">
-                      {user.first_name?.[0] || user.email[0].toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="hidden lg:block">
-                    <p className="text-sm font-medium">
-                      {user.first_name || 'User'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {user.email}
-                    </p>
-                  </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-6 h-6 border-2 border-royal-purple border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-sm">Loading...</span>
+              </div>
+            ) : user ? (
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-royal-purple rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-medium">
+                    {user.user_metadata?.full_name?.charAt(0) || user.email?.charAt(0) || 'U'}
+                  </span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleLogout}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                <span className="text-sm text-gray-700">
+                  {user.user_metadata?.full_name || user.email}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={handleSignOut}
+                  className="text-gray-600 hover:text-red-600"
                 >
-                  <LogOut className="h-5 w-5" />
+                  <LogOut className="h-4 w-4 mr-1" />
+                  Sign Out
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="royal"
+              <Button 
+                variant="ghost" 
                 onClick={handleGoogleLogin}
-                className="px-6 shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
+                className="text-gray-700 hover:text-royal-purple"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Sign in with Google
+                <LogIn className="h-4 w-4 mr-1" />
+                Sign In
               </Button>
             )}
           </div>
@@ -191,17 +169,17 @@ const Header = () => {
       {isMenuOpen && (
         <div className="md:hidden border-t bg-white/95 backdrop-blur-md">
           <div className="container mx-auto px-4 py-4 space-y-4">
-            {isAuthenticated && user ? (
+            {user ? (
               <div className="space-y-4">
                 <div className="flex items-center space-x-3 p-3 rounded-lg bg-royal-purple/10">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-royal-purple to-royal-crimson flex items-center justify-center">
                     <span className="text-white font-semibold">
-                      {user.first_name?.[0] || user.email[0].toUpperCase()}
+                      {user.user_metadata?.full_name?.charAt(0) || user.email?.charAt(0) || 'U'}
                     </span>
                   </div>
                   <div>
                     <p className="font-medium">
-                      {user.first_name || 'User'}
+                      {user.user_metadata?.full_name || 'User'}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {user.email}
@@ -222,11 +200,11 @@ const Header = () => {
                 
                 <Button
                   variant="ghost"
-                  onClick={handleLogout}
+                  onClick={handleSignOut}
                   className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
                   <LogOut className="h-4 w-4 mr-2" />
-                  Logout
+                  Sign Out
                 </Button>
               </div>
             ) : (

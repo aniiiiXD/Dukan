@@ -1,28 +1,36 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
+import { supabase } from '../config/supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 const AuthCallback = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
 
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
         console.log('🔄 Processing OAuth callback...')
+        console.log('🔍 Current URL:', window.location.href)
         
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search)
-        const code = urlParams.get('code')
+        const hashParams = new URLSearchParams(window.location.hash.slice(1))
+        
+        const code = urlParams.get('code') || hashParams.get('code')
+        const accessToken = urlParams.get('access_token') || hashParams.get('access_token')
+        const refreshToken = urlParams.get('refresh_token') || hashParams.get('refresh_token')
+        
+        console.log('🔍 Found params:', { 
+          code: !!code, 
+          accessToken: !!accessToken, 
+          refreshToken: !!refreshToken,
+          fullUrl: window.location.href
+        })
         
         if (code) {
           console.log('✅ Authorization code found, exchanging for session...')
           
-          // Exchange code for session
           const { data, error } = await supabase.auth.exchangeCodeForSession(code)
           
           if (error) {
@@ -31,17 +39,46 @@ const AuthCallback = () => {
             return
           }
           
-          if (data.session) {
-            console.log('✅ OAuth callback successful, user:', data.session.user.email)
+          if (data.session && data.user) {
+            console.log('✅ OAuth callback successful, user:', data.user.email)
             
-            // Clear any existing error parameters and redirect to home
-            navigate('/', { replace: true })
+            // Force session refresh to ensure frontend recognizes the user
+            await supabase.auth.refreshSession()
+            
+            // Small delay to ensure auth context updates
+            setTimeout(() => {
+              navigate('/', { replace: true })
+            }, 1000)
+            
           } else {
             console.log('❌ No session found in callback')
             navigate('/?error=no_session', { replace: true })
           }
+        } else if (accessToken) {
+          console.log('✅ Access token found, setting session...')
+          
+          // Try to get user with the access token
+          const { data: { user }, error } = await supabase.auth.getUser(accessToken)
+          
+          if (error || !user) {
+            console.error('❌ Error getting user with token:', error)
+            navigate('/?error=token_invalid', { replace: true })
+            return
+          }
+          
+          console.log('✅ User found with token:', user.email)
+          
+          // Force session refresh
+          await supabase.auth.refreshSession()
+          
+          setTimeout(() => {
+            navigate('/', { replace: true })
+          }, 1000)
+          
         } else {
-          console.log('❌ No authorization code found')
+          console.log('❌ No authorization code or token found')
+          console.log('🔍 URL search params:', window.location.search)
+          console.log('🔍 URL hash:', window.location.hash)
           navigate('/?error=no_code', { replace: true })
         }
       } catch (error) {
@@ -50,7 +87,10 @@ const AuthCallback = () => {
       }
     }
 
-    handleAuthCallback()
+    // Delay execution to ensure URL parameters are fully loaded
+    const timer = setTimeout(handleAuthCallback, 500)
+    
+    return () => clearTimeout(timer)
   }, [navigate])
 
   return (
@@ -63,6 +103,10 @@ const AuthCallback = () => {
         <p className="text-muted-foreground">Please wait while we sign you in.</p>
         <div className="mt-4">
           <div className="w-8 h-8 border-4 border-royal-purple border-t-transparent rounded-full animate-spin mx-auto"></div>
+        </div>
+        {/* Debug info for testing */}
+        <div className="mt-4 text-xs text-gray-500">
+          <p>URL: {window.location.href}</p>
         </div>
       </div>
     </div>
