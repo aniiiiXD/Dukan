@@ -1,32 +1,148 @@
 const express = require("express");
 const crypto = require("crypto");
 const cors = require("cors");
+const { createClient } = require("@supabase/supabase-js");
+const path = require("path");
+require("dotenv").config();
 
 // ==========================================
-// CONFIGURATION & SETUP
+// ENVIRONMENT AND CONFIGURATION
 // ==========================================
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
 
-// Middleware Configuration
+// Load environment-specific configuration
+const envPath = path.resolve(__dirname, `.env.${NODE_ENV}`);
+const defaultEnvPath = path.resolve(__dirname, ".env");
+
+console.log(`🔍 Starting Jhankari backend in ${NODE_ENV} mode...`);
+console.log(`📁 Looking for: ${envPath}`);
+
+// Load environment variables
+require("dotenv").config({ path: envPath });
+require("dotenv").config({ path: defaultEnvPath });
+
+// Debug environment variables
+console.log("🔍 Environment Variables Check:");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("PORT:", process.env.PORT);
+console.log(
+  "SUPABASE_URL:",
+  process.env.SUPABASE_URL ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "SUPABASE_SERVICE_ROLE_KEY:",
+  process.env.SUPABASE_SERVICE_ROLE_KEY ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "SUPABASE_ANON_KEY:",
+  process.env.SUPABASE_ANON_KEY ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "RAZORPAY_KEY_ID:",
+  process.env.RAZORPAY_KEY_ID ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "RAZORPAY_KEY_SECRET:",
+  process.env.RAZORPAY_KEY_SECRET ? "Set ✅" : "Missing ❌"
+);
+
+// Environment validation
+const requiredEnvVars = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_ANON_KEY",
+];
+const missingEnvVars = requiredEnvVars.filter(
+  (varName) => !process.env[varName]
+);
+
+if (missingEnvVars.length > 0) {
+  console.error(
+    `❌ Missing required environment variables: ${missingEnvVars.join(", ")}`
+  );
+  console.error(
+    "Please check your .env files and ensure all required variables are set."
+  );
+  process.exit(1);
+}
+
+// ==========================================
+// SUPABASE INITIALIZATION
+// ==========================================
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+    db: { schema: "public" },
+    global: { headers: { "x-application-name": "jhankari-backend" } },
+  }
+);
+
+console.log(`✅ Supabase client initialized for ${NODE_ENV}`);
+
+// ==========================================
+// MIDDLEWARE CONFIGURATION
+// ==========================================
+
+// Basic middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // CORS Configuration
+const allowedOrigins =
+  NODE_ENV === "production"
+    ? [
+        "https://jhankari.com",
+        "https://www.jhankari.com",
+        "https://api.jhankari.com",
+        "https://your-domain.vercel.app",
+      ]
+    : [
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8080",
+      ];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:8080",
-      "http://localhost:3000",
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:8080",
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else if (NODE_ENV === "development") {
+        console.warn(
+          `⚠️ CORS allowing unknown origin in development: ${origin}`
+        );
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ CORS blocked origin: ${origin}`);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    exposedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 200,
+    preflightContinue: false,
+    maxAge: NODE_ENV === "production" ? 86400 : 0,
   })
 );
+
+app.options("*", cors());
 
 // ==========================================
 // RAZORPAY INITIALIZATION
@@ -45,12 +161,10 @@ const initializeRazorpay = () => {
 
   try {
     const Razorpay = require("razorpay");
-
     razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID,
       key_secret: process.env.RAZORPAY_KEY_SECRET,
     });
-
     console.log(
       "✅ Razorpay initialized successfully with key:",
       process.env.RAZORPAY_KEY_ID
@@ -68,62 +182,392 @@ isRazorpayEnabled = initializeRazorpay();
 // UTILITY FUNCTIONS
 // ==========================================
 
-/**
- * Validate required fields in request body
- * @param {Object} body - Request body
- * @param {Array} requiredFields - Array of required field names
- * @returns {Object} - Validation result
- */
 const validateRequiredFields = (body, requiredFields) => {
   const missingFields = requiredFields.filter((field) => {
     const value = field.split(".").reduce((obj, key) => obj?.[key], body);
     return !value;
   });
-
   return {
     isValid: missingFields.length === 0,
     missingFields,
   };
 };
 
-/**
- * Generate unique receipt ID
- * @returns {String} - Unique receipt ID
- */
 const generateReceiptId = () => {
   return `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-/**
- * Verify Razorpay payment signature
- * @param {String} orderId - Razorpay order ID
- * @param {String} paymentId - Razorpay payment ID
- * @param {String} signature - Razorpay signature
- * @returns {Boolean} - Verification result
- */
 const verifyPaymentSignature = (orderId, paymentId, signature) => {
   if (!isRazorpayEnabled) {
     console.log("⚠️ Razorpay not enabled - skipping signature verification");
-    return true; // Allow in test mode
+    return true;
   }
-
   const body = orderId + "|" + paymentId;
   const expectedSignature = crypto
     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
     .update(body.toString())
     .digest("hex");
-
   return expectedSignature === signature;
 };
 
+// Database helper functions
+const getAllProducts = async () => {
+  try {
+    console.log("📦 Fetching products from database...");
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        `
+        *,
+        categories (
+          name,
+          slug
+        )
+      `
+      )
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Database error:", error);
+      throw error;
+    }
+    console.log(`✅ Found ${data?.length || 0} products`);
+    return data || [];
+  } catch (error) {
+    console.error("Error in getAllProducts:", error);
+    throw error;
+  }
+};
+
+const addToCart = async (userId, productId, quantity = 1) => {
+  try {
+    console.log(
+      `🛒 Adding to cart: User ${userId}, Product ${productId}, Qty ${quantity}`
+    );
+
+    const { data: existing, error: selectError } = await supabase
+      .from("cart_items")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("product_id", productId)
+      .single();
+
+    if (existing && !selectError) {
+      const { data, error } = await supabase
+        .from("cart_items")
+        .update({
+          quantity: existing.quantity + quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("*, products(*)")
+        .single();
+
+      if (error) {
+        console.error("❌ Error updating cart item:", error);
+        throw error;
+      }
+      console.log("✅ Cart item quantity updated");
+      return data;
+    } else {
+      const { data, error } = await supabase
+        .from("cart_items")
+        .insert([
+          {
+            user_id: userId,
+            product_id: productId,
+            quantity: quantity,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select("*, products(*)")
+        .single();
+
+      if (error) {
+        console.error("❌ Error inserting cart item:", error);
+        throw error;
+      }
+      console.log("✅ New item added to cart");
+      return data;
+    }
+  } catch (error) {
+    console.error("❌ Error in addToCart:", error);
+    throw error;
+  }
+};
+
+const getCart = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from("cart_items")
+      .select(
+        `
+        *,
+        products (*)
+      `
+      )
+      .eq("user_id", userId);
+
+    if (error) throw error;
+
+    const cart = {
+      id: `cart-${userId}`,
+      userId: userId,
+      CartItem: data.map((item) => ({
+        id: item.id,
+        productId: item.product_id,
+        quantity: item.quantity,
+        addedAt: item.created_at,
+        Product: item.products,
+      })),
+    };
+    return cart;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const removeFromCart = async (userId, productId) => {
+  try {
+    const { error } = await supabase
+      .from("cart_items")
+      .delete()
+      .eq("user_id", userId)
+      .eq("product_id", productId);
+
+    if (error) throw error;
+    console.log("✅ Item removed from cart");
+  } catch (error) {
+    throw error;
+  }
+};
+
 // ==========================================
-// ORDER MANAGEMENT ENDPOINTS
+// API ROUTES - HEALTH & DEBUG
 // ==========================================
 
-/**
- * Create new order with Razorpay integration
- * POST /api/v1/orders
- */
+app.get("/health", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("products")
+      .select("count")
+      .limit(1);
+
+    const dbStatus = error ? "disconnected" : "connected";
+
+    res.status(200).json({
+      status: "OK",
+      service: "Jhankari E-commerce API",
+      environment: NODE_ENV,
+      database: dbStatus,
+      timestamp: new Date().toISOString(),
+      domain: req.get("host"),
+      version: "1.0.0",
+      uptime: process.uptime(),
+      razorpay_status: isRazorpayEnabled ? "enabled" : "disabled",
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "ERROR",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/api/debug/test-connection", async (req, res) => {
+  if (NODE_ENV === "production") {
+    return res.status(404).json({
+      success: false,
+      error: "Debug endpoints not available in production",
+    });
+  }
+
+  try {
+    console.log("🔧 Testing database connection...");
+    const { data, error } = await supabase
+      .from("products")
+      .select("count")
+      .limit(1);
+
+    if (error) {
+      console.error("❌ Database test failed:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Database connection failed",
+        details: error.message,
+      });
+    }
+
+    console.log("✅ Database connection successful");
+    res.json({
+      success: true,
+      message: "Database connection working",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Database connection error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Database connection error",
+      details: error.message,
+    });
+  }
+});
+
+// ==========================================
+// API ROUTES - PRODUCTS
+// ==========================================
+
+app.get("/api/v1/products", async (req, res) => {
+  try {
+    const products = await getAllProducts();
+    res.json({
+      success: true,
+      count: products.length,
+      data: products,
+    });
+  } catch (error) {
+    console.error("Products endpoint error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch products",
+      code: "PRODUCTS_FETCH_ERROR",
+    });
+  }
+});
+
+// ==========================================
+// API ROUTES - CART MANAGEMENT
+// ==========================================
+
+app.post("/api/v1/cart", async (req, res) => {
+  try {
+    const { userId, productId, quantity } = req.body;
+
+    if (!userId || !productId) {
+      return res.status(400).json({
+        success: false,
+        error: "UserId and productId are required",
+        code: "MISSING_REQUIRED_FIELDS",
+      });
+    }
+
+    const cartItem = await addToCart(userId, productId, quantity || 1);
+
+    res.json({
+      success: true,
+      message: "Item added to cart",
+      cartItem: cartItem,
+    });
+  } catch (error) {
+    console.error("Error adding to cart:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to add to cart",
+      code: "CART_ADD_FAILED",
+    });
+  }
+});
+
+app.post("/api/v1/cart/merge", async (req, res) => {
+  try {
+    const { userId, guestCartItems } = req.body;
+
+    if (!userId || !guestCartItems || !Array.isArray(guestCartItems)) {
+      return res.status(400).json({
+        success: false,
+        error: "UserId and guestCartItems array are required",
+        code: "MISSING_REQUIRED_FIELDS",
+      });
+    }
+
+    for (const item of guestCartItems) {
+      try {
+        await addToCart(userId, item.productId, item.quantity);
+      } catch (error) {
+        console.warn(`Failed to merge item ${item.productId}:`, error.message);
+      }
+    }
+
+    const cart = await getCart(userId);
+    res.json({
+      success: true,
+      message: "Guest cart merged successfully",
+      cart: cart,
+    });
+  } catch (error) {
+    console.error("Error merging cart:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to merge cart",
+      code: "CART_MERGE_FAILED",
+    });
+  }
+});
+
+app.delete("/api/v1/cart", async (req, res) => {
+  try {
+    const { userId, productId } = req.body;
+
+    if (!userId || !productId) {
+      return res.status(400).json({
+        success: false,
+        error: "UserId and productId are required",
+        code: "MISSING_REQUIRED_FIELDS",
+      });
+    }
+
+    await removeFromCart(userId, productId);
+
+    res.json({
+      success: true,
+      message: "Item removed from cart",
+    });
+  } catch (error) {
+    console.error("Error removing from cart:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to remove from cart",
+      code: "CART_REMOVE_FAILED",
+    });
+  }
+});
+
+app.get("/api/v1/cart/:userId", async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const cart = await getCart(userId);
+
+    if (!cart || cart.CartItem.length === 0) {
+      return res.json({
+        success: true,
+        id: null,
+        userId: userId,
+        CartItem: [],
+        items: [],
+      });
+    }
+
+    res.json({
+      success: true,
+      ...cart,
+    });
+  } catch (error) {
+    console.error("Error getting cart:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get cart",
+      code: "CART_GET_FAILED",
+    });
+  }
+});
+
+// ==========================================
+// API ROUTES - ORDER MANAGEMENT
+// ==========================================
+
 app.post("/api/v1/orders", async (req, res) => {
   console.log("🎯 Creating order with data:", {
     itemsCount: req.body.items?.length,
@@ -141,7 +585,6 @@ app.post("/api/v1/orders", async (req, res) => {
       totalAmount,
     } = req.body;
 
-    // Validate required fields
     const validation = validateRequiredFields(req.body, [
       "items",
       "billingAddress",
@@ -161,7 +604,6 @@ app.post("/api/v1/orders", async (req, res) => {
       });
     }
 
-    // Validate totalAmount
     if (totalAmount <= 0) {
       return res.status(400).json({
         success: false,
@@ -173,11 +615,10 @@ app.post("/api/v1/orders", async (req, res) => {
     let orderResponse;
 
     if (isRazorpayEnabled) {
-      // Create Razorpay order
       console.log("💳 Creating Razorpay order...");
 
       const razorpayOrder = await razorpay.orders.create({
-        amount: Math.round(totalAmount * 100), // Amount in paise
+        amount: Math.round(totalAmount * 100),
         currency: "INR",
         receipt: generateReceiptId(),
         notes: {
@@ -205,7 +646,6 @@ app.post("/api/v1/orders", async (req, res) => {
         },
       };
     } else {
-      // Test mode - create mock order
       console.log("🧪 Creating test order (Razorpay not configured)...");
 
       const mockOrderId = `test_order_${Date.now()}`;
@@ -227,17 +667,6 @@ app.post("/api/v1/orders", async (req, res) => {
     }
 
     // TODO: Store order in database here
-    // const dbOrder = await saveOrderToDatabase({
-    //   razorpay_order_id: orderResponse.razorpay_order_id,
-    //   customer_email: email,
-    //   customer_phone: phoneNumber,
-    //   billing_address: billingAddress,
-    //   shipping_address: shippingAddress,
-    //   items: items,
-    //   total_amount: totalAmount,
-    //   status: 'pending'
-    // });
-
     res.json(orderResponse);
   } catch (error) {
     console.error("❌ Error creating order:", error);
@@ -245,17 +674,12 @@ app.post("/api/v1/orders", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to create order",
-      details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+      details: NODE_ENV === "development" ? error.message : undefined,
       code: "ORDER_CREATION_FAILED",
     });
   }
 });
 
-/**
- * Verify payment and update order status
- * PUT /api/v1/orders
- */
 app.put("/api/v1/orders", async (req, res) => {
   console.log("🔐 Verifying payment:", {
     orderId: req.body.razorpay_order_id,
@@ -266,7 +690,6 @@ app.put("/api/v1/orders", async (req, res) => {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;
 
-    // Validate required fields
     const validation = validateRequiredFields(req.body, [
       "razorpay_order_id",
       "razorpay_payment_id",
@@ -282,11 +705,8 @@ app.put("/api/v1/orders", async (req, res) => {
       });
     }
 
-    // Handle test orders
     if (razorpay_order_id.startsWith("test_order_")) {
       console.log("🧪 Test payment verification - auto approving");
-
-      // TODO: Update test order in database
 
       return res.json({
         success: true,
@@ -300,7 +720,6 @@ app.put("/api/v1/orders", async (req, res) => {
       });
     }
 
-    // Verify payment signature
     const isValidSignature = verifyPaymentSignature(
       razorpay_order_id,
       razorpay_payment_id,
@@ -319,13 +738,6 @@ app.put("/api/v1/orders", async (req, res) => {
     console.log("✅ Payment verified successfully");
 
     // TODO: Update order in database
-    // const updatedOrder = await updateOrderPaymentStatus({
-    //   razorpay_order_id,
-    //   razorpay_payment_id,
-    //   razorpay_signature,
-    //   status: 'paid'
-    // });
-
     res.json({
       success: true,
       message: "Payment verified successfully",
@@ -342,8 +754,7 @@ app.put("/api/v1/orders", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Internal server error",
-      details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+      details: NODE_ENV === "development" ? error.message : undefined,
       code: "PAYMENT_VERIFICATION_ERROR",
     });
   }
@@ -353,10 +764,6 @@ app.put("/api/v1/orders", async (req, res) => {
 // LEGACY ENDPOINTS (Backward Compatibility)
 // ==========================================
 
-/**
- * Legacy order creation endpoint
- * POST /api/create-order
- */
 app.post("/api/create-order", async (req, res) => {
   console.log("🔄 Legacy order creation endpoint called");
 
@@ -412,10 +819,6 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-/**
- * Legacy payment verification endpoint
- * POST /api/verify-payment
- */
 app.post("/api/verify-payment", (req, res) => {
   console.log("🔄 Legacy payment verification endpoint called");
 
@@ -451,14 +854,6 @@ app.post("/api/verify-payment", (req, res) => {
   }
 });
 
-// ==========================================
-// PAYMENT INFORMATION ENDPOINTS
-// ==========================================
-
-/**
- * Get payment details by payment ID
- * GET /api/payment/:payment_id
- */
 app.get("/api/payment/:payment_id", async (req, res) => {
   try {
     const { payment_id } = req.params;
@@ -497,59 +892,9 @@ app.get("/api/payment/:payment_id", async (req, res) => {
 });
 
 // ==========================================
-// HEALTH CHECK & DEBUG ENDPOINTS
-// ==========================================
-
-/**
- * Health check endpoint
- * GET /api/health
- */
-app.get("/api/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "Payment API server is running",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
-    razorpay_status: isRazorpayEnabled ? "enabled" : "disabled",
-    endpoints: {
-      orders: ["POST /api/v1/orders", "PUT /api/v1/orders"],
-      legacy: ["POST /api/create-order", "POST /api/verify-payment"],
-      info: ["GET /api/payment/:payment_id", "GET /api/health"],
-    },
-  });
-});
-
-/**
- * Debug endpoint for development
- * GET /api/debug/config
- */
-app.get("/api/debug/config", (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({
-      success: false,
-      error: "Debug endpoints not available in production",
-    });
-  }
-
-  res.json({
-    success: true,
-    config: {
-      node_env: process.env.NODE_ENV,
-      razorpay_enabled: isRazorpayEnabled,
-      razorpay_key_id: process.env.RAZORPAY_KEY_ID ? "Set" : "Not Set",
-      razorpay_key_secret: process.env.RAZORPAY_KEY_SECRET ? "Set" : "Not Set",
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// ==========================================
 // ERROR HANDLING MIDDLEWARE
 // ==========================================
 
-/**
- * Global error handling middleware
- */
 app.use((err, req, res, next) => {
   console.error("🚨 Unhandled error:", err);
 
@@ -557,32 +902,67 @@ app.use((err, req, res, next) => {
     success: false,
     error: "Internal server error",
     code: "INTERNAL_ERROR",
-    ...(process.env.NODE_ENV === "development" && {
+    ...(NODE_ENV === "development" && {
       details: err.message,
       stack: err.stack,
     }),
   });
 });
 
-/**
- * 404 handler for undefined routes
- */
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
     error: "API endpoint not found",
     path: req.originalUrl,
     code: "ENDPOINT_NOT_FOUND",
-    available_endpoints: [
-      "POST /api/v1/orders",
-      "PUT /api/v1/orders",
-      "GET /api/health",
-    ],
+    available_endpoints: {
+      health: ["GET /health"],
+      products: ["GET /api/v1/products"],
+      cart: [
+        "POST /api/v1/cart",
+        "POST /api/v1/cart/merge",
+        "DELETE /api/v1/cart",
+        "GET /api/v1/cart/:userId",
+      ],
+      orders: ["POST /api/v1/orders", "PUT /api/v1/orders"],
+      legacy: ["POST /api/create-order", "POST /api/verify-payment"],
+    },
   });
 });
 
 // ==========================================
-// MODULE EXPORT
+// SERVER STARTUP
 // ==========================================
+
+app.listen(PORT, async () => {
+  console.log(`🚀 Jhankari E-commerce API started`);
+  console.log(`🌐 Environment: ${NODE_ENV}`);
+  console.log(`📡 Port: ${PORT}`);
+  console.log(
+    `🔗 API Base: ${
+      NODE_ENV === "production"
+        ? "https://api.jhankari.com"
+        : `http://localhost:${PORT}`
+    }`
+  );
+  console.log(`🛡️ CORS Origins: ${allowedOrigins.join(", ")}`);
+  console.log(
+    `💳 Razorpay Status: ${isRazorpayEnabled ? "Enabled" : "Test Mode"}`
+  );
+
+  try {
+    const { data, error } = await supabase
+      .from("products")
+      .select("count")
+      .limit(1);
+    if (!error) {
+      console.log(`🎉 All systems operational in ${NODE_ENV} mode!`);
+    } else {
+      console.error("⚠️ Database connection issues - Check configuration");
+    }
+  } catch (error) {
+    console.error("⚠️ Database connection issues - Check configuration");
+  }
+});
 
 module.exports = app;

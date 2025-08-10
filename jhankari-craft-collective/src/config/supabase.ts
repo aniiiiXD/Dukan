@@ -48,8 +48,21 @@ export const getSupabaseClient = (): SupabaseClient => {
 // ==========================================
 // DEFAULT EXPORT FOR BACKWARD COMPATIBILITY
 // ==========================================
-export const supabase = getSupabaseClient();
-
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Customize OAuth flow
+    flowType: 'pkce',
+    // Add custom configuration
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+  global: {
+    headers: {
+      'x-application-name': 'Jhankari Craft Collective',
+    },
+  },
+})
 // ==========================================
 // API CONFIGURATION
 // ==========================================

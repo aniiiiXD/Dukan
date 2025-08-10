@@ -192,36 +192,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ==========================================
   // AUTHENTICATION FUNCTIONS
   // ==========================================
-  const signInWithGoogle = useCallback(async (): Promise<boolean> => {
+  const signInWithGoogle = async (): Promise<boolean> => {
     try {
-      console.log('🔐 Initiating Google sign-in...');
+      console.log('🔄 Initiating Google sign-in...')
       
-      const redirectTo = `${window.location.origin}/auth/callback`;
-      console.log('Redirect URL:', redirectTo);
+      // Use production domain or localhost for redirect
+      const redirectTo = import.meta.env.PROD 
+        ? 'https://jhankari.com/auth/callback'
+        : `${window.location.origin}/auth/callback`
       
+      console.log('🌐 Redirect URL:', redirectTo)
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
+          redirectTo: redirectTo,
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent'
-          }
-        }
-      });
-      
+            prompt: 'consent',
+          },
+        },
+      })
+
       if (error) {
-        console.error('Google sign in error:', error);
-        return false;
+        console.error('❌ Google sign in error:', error)
+        return false
       }
-      
-      console.log('✅ Redirecting to Google OAuth...');
-      return true;
+
+      console.log('✅ Redirecting to Google OAuth...')
+      return true
     } catch (error) {
-      console.error('❌ Google sign in failed:', error);
-      return false;
+      console.error('❌ Google sign in failed:', error)
+      return false
     }
-  }, []);
+  }
+
 
   const logout = useCallback(async () => {
     try {

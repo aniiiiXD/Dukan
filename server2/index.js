@@ -79,6 +79,7 @@ const config = {
     corsOrigins: [
       "https://jhankari.com",
       "https://www.jhankari.com",
+      "https://jhankari-frontend.vercel.app",
       "https://api.jhankari.com",
     ],
     logLevel: "info",
@@ -160,35 +161,46 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// CORS Configuration
+// ==========================================
+// CORS CONFIGURATION
+// ==========================================
+
+// Define allowed origins based on environment
+const allowedOrigins =
+  NODE_ENV === "production"
+    ? [
+        "https://jhankari.com",
+        "https://www.jhankari.com",
+        "https://jhankari-frontend.vercel.app", // Your current Vercel frontend URL
+        // "https://server2-r3qc00jy6-princes-projects-53a1e3ae.vercel.app/",
+        "https://api.jhankari.com",
+      ]
+    : [
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8080",
+      ];
+
+// Enhanced CORS configuration with proper error handling
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log("🌐 CORS check - Origin:", origin);
+
+    // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
 
-    const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
-      : currentConfig.corsOrigins;
-
-    if (currentConfig.enableDebug) {
-      console.log(
-        `🌐 CORS check - Origin: ${origin}, Allowed: ${allowedOrigins.includes(
-          origin
-        )}`
-      );
-    }
-
+    // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
+      console.log("✅ CORS allowed for origin:", origin);
       callback(null, true);
+    } else if (NODE_ENV === "development") {
+      console.warn(`⚠️ CORS allowing unknown origin in development: ${origin}`);
+      callback(null, true); // Allow all origins in development
     } else {
-      if (NODE_ENV === "development") {
-        console.warn(
-          `⚠️ CORS allowing unknown origin in development: ${origin}`
-        );
-        callback(null, true);
-      } else {
-        console.warn(`⚠️ CORS blocked origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
-      }
+      console.error(`❌ CORS blocked origin: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
@@ -203,11 +215,35 @@ const corsOptions = {
   exposedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 200,
   preflightContinue: false,
-  maxAge: NODE_ENV === "production" ? 86400 : 0,
+  maxAge: NODE_ENV === "production" ? 86400 : 0, // Cache preflight for 24h in production
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
+
+// Handle preflight OPTIONS requests explicitly
 app.options("*", cors(corsOptions));
+
+// Debug middleware for CORS (development only)
+if (NODE_ENV === "development") {
+  app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    const origin = req.get("Origin") || "No Origin";
+    const method = req.method;
+    const path = req.path;
+
+    if (method === "OPTIONS") {
+      console.log(
+        `${timestamp} - 🔄 CORS Preflight: ${method} ${path} from ${origin}`
+      );
+    } else {
+      console.log(
+        `${timestamp} - 🌐 Request: ${method} ${path} from ${origin}`
+      );
+    }
+    next();
+  });
+}
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -471,7 +507,6 @@ const createOrder = async (orderData) => {
     console.log(
       `📋 Creating order in database for: ${orderData.customer_email}`
     );
-    console.log(`💰 Order amount: ₹${orderData.total_amount}`);
 
     const { data: order, error } = await supabase
       .from("orders")
@@ -481,10 +516,7 @@ const createOrder = async (orderData) => {
 
     if (error) {
       console.error("❌ Database error details:", error);
-      console.error("❌ Failed orderData:", JSON.stringify(orderData, null, 2));
-      throw new Error(
-        `Database error: ${error.message || "Unknown database error"}`
-      );
+      throw new Error(`Database error: ${error.message}`);
     }
 
     console.log("✅ Order created successfully in database:", order.id);
@@ -564,6 +596,28 @@ const verifyPaymentSignature = (orderId, paymentId, signature) => {
 
   return expectedSignature === signature;
 };
+
+// ==========================================
+// ROOT ROUTE HANDLER (CRITICAL FOR VERCEL)
+// ==========================================
+
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "🚀 Jhankari E-commerce API is running successfully!",
+    service: "Jhankari Backend API",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
+    environment: NODE_ENV,
+    endpoints: {
+      health: "/health",
+      products: "/api/v1/products",
+      cart: ["/api/v1/cart", "/api/v1/cart/merge", "/api/v1/cart/:userId"],
+      orders: ["/api/v1/orders"],
+    },
+    status: "All systems operational",
+  });
+});
 
 // ==========================================
 // API ROUTES - HEALTH & DEBUG
@@ -962,15 +1016,8 @@ app.get("/api/v1/cart/:userId", async (req, res) => {
 // ==========================================
 
 // Orders endpoint for payment integration (POST /api/v1/orders)
-// Orders endpoint for payment integration (POST /api/v1/orders)
 app.post("/api/v1/orders", async (req, res) => {
   console.log("🎯 Creating order with payment integration");
-  console.log("📋 Request body validation:", {
-    hasItems: !!req.body.items,
-    hasBillingAddress: !!req.body.billingAddress,
-    hasEmail: !!req.body.email,
-    totalAmount: req.body.totalAmount,
-  });
 
   try {
     const {
@@ -1004,41 +1051,18 @@ app.post("/api/v1/orders", async (req, res) => {
       });
     }
 
-    // Debug Razorpay credentials
-    console.log("🔑 Razorpay Configuration Check:");
-    console.log("RAZORPAY_KEY_ID exists:", !!process.env.RAZORPAY_KEY_ID);
-    console.log(
-      "RAZORPAY_KEY_SECRET exists:",
-      !!process.env.RAZORPAY_KEY_SECRET
-    );
-
-    if (process.env.RAZORPAY_KEY_ID) {
-      console.log(
-        "RAZORPAY_KEY_ID preview:",
-        process.env.RAZORPAY_KEY_ID.substring(0, 12) + "..."
-      );
-    }
-
-    // Check if Razorpay credentials are properly configured
+    // Check Razorpay configuration
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error(
-        "❌ Razorpay credentials are missing from environment variables"
-      );
-      return res.status(500).json({
-        success: false,
-        error: "Payment service configuration error. Please contact support.",
-        details: "Razorpay credentials not configured",
-        code: "PAYMENT_SERVICE_CONFIG_ERROR",
-      });
-    }
+      console.log("🧪 Creating test order (Razorpay not configured)");
 
-    // Validate credentials format
-    if (!process.env.RAZORPAY_KEY_ID.startsWith("rzp_")) {
-      console.error("❌ Invalid Razorpay Key ID format");
-      return res.status(500).json({
-        success: false,
-        error: "Invalid payment service configuration.",
-        code: "INVALID_RAZORPAY_KEY_FORMAT",
+      const mockOrderId = `test_order_${Date.now()}`;
+      return res.json({
+        success: true,
+        razorpay_order_id: mockOrderId,
+        amount: amountInPaise,
+        currency: "INR",
+        key_id: "test_key_id",
+        test_mode: true,
       });
     }
 
@@ -1057,15 +1081,12 @@ app.post("/api/v1/orders", async (req, res) => {
       return res.status(500).json({
         success: false,
         error: "Payment service initialization failed",
-        details: razorpayInitError.message,
         code: "RAZORPAY_INIT_ERROR",
       });
     }
 
-    // Create Razorpay order with comprehensive error handling
-    console.log("💳 Creating Razorpay order...");
-
-    const orderOptions = {
+    // Create Razorpay order
+    const razorpayOrder = await razorpay.orders.create({
       amount: amountInPaise,
       currency: "INR",
       receipt: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1076,130 +1097,38 @@ app.post("/api/v1/orders", async (req, res) => {
         shipping_city: shippingAddress.city || "Not provided",
         items_count: items.length.toString(),
       },
-    };
-
-    console.log("📦 Order creation options:", {
-      amount: orderOptions.amount,
-      currency: orderOptions.currency,
-      receipt: orderOptions.receipt,
-      notes_count: Object.keys(orderOptions.notes).length,
     });
 
-    try {
-      const razorpayOrder = await razorpay.orders.create(orderOptions);
-      console.log("✅ Razorpay order created successfully:", razorpayOrder.id);
+    console.log("✅ Razorpay order created:", razorpayOrder.id);
 
-      // Store order in database
-      const orderData = {
-        razorpay_order_id: razorpayOrder.id,
-        customer_email: email,
-        customer_phone: phoneNumber,
-        billing_address: billingAddress,
-        shipping_address: shippingAddress,
-        items: items,
-        total_amount: totalAmount,
-        subtotal: totalAmount,
-        payment_method: "razorpay",
-        status: "pending",
-        payment_status: "pending",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+    // TODO: Store order in database
+    res.json({
+      success: true,
+      razorpay_order_id: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      key_id: process.env.RAZORPAY_KEY_ID,
+    });
+  } catch (razorpayApiError) {
+    console.error("❌ Razorpay API error:", razorpayApiError);
 
-      const order = await createOrder(orderData);
+    let errorMessage =
+      "Payment service temporarily unavailable. Please try again.";
+    let errorCode = "RAZORPAY_API_ERROR";
 
-      res.json({
-        success: true,
-        order: order,
-        razorpay_order_id: razorpayOrder.id,
-        amount: razorpayOrder.amount,
-        currency: razorpayOrder.currency,
-        key_id: process.env.RAZORPAY_KEY_ID,
-      });
-    } catch (razorpayApiError) {
-      console.error("❌ Razorpay API error details:", {
-        statusCode: razorpayApiError.statusCode,
-        error: razorpayApiError.error,
-        message: razorpayApiError.message,
-      });
-
-      let errorMessage =
-        "Payment service temporarily unavailable. Please try again.";
-      let errorCode = "RAZORPAY_API_ERROR";
-
-      // Enhanced error handling based on Razorpay error types
-      if (razorpayApiError.statusCode) {
-        switch (razorpayApiError.statusCode) {
-          case 400:
-            errorMessage =
-              "Invalid payment details. Please check and try again.";
-            errorCode = "BAD_REQUEST_ERROR";
-
-            // Check specific 400 error reasons
-            if (
-              razorpayApiError.error?.description?.includes(
-                "Amount exceeds maximum"
-              )
-            ) {
-              errorMessage =
-                "Order amount exceeds maximum limit for test mode (₹50,000).";
-              errorCode = "AMOUNT_LIMIT_EXCEEDED";
-            } else if (razorpayApiError.error?.description?.includes("emoji")) {
-              errorMessage =
-                "Invalid characters in order details. Please remove special characters.";
-              errorCode = "INVALID_CHARACTERS";
-            }
-            break;
-
-          case 401:
-            errorMessage =
-              "Payment service authentication failed. Please contact support.";
-            errorCode = "AUTHENTICATION_ERROR";
-            break;
-
-          case 500:
-            errorMessage =
-              "Payment service internal error. Please try again in a few minutes.";
-            errorCode = "INTERNAL_SERVER_ERROR";
-            break;
-
-          default:
-            errorMessage = `Payment service error (${razorpayApiError.statusCode}). Please try again.`;
-        }
-      }
-
-      // Log the full error for debugging
-      if (razorpayApiError.error) {
-        console.error(
-          "Full Razorpay error:",
-          JSON.stringify(razorpayApiError.error, null, 2)
-        );
-      }
-
-      return res.status(500).json({
-        success: false,
-        error: errorMessage,
-        code: errorCode,
-        ...(currentConfig?.enableDebug && {
-          debug: {
-            razorpayStatusCode: razorpayApiError.statusCode,
-            razorpayError:
-              razorpayApiError.error?.description || razorpayApiError.message,
-          },
-        }),
-      });
+    if (razorpayApiError.statusCode === 400) {
+      errorMessage = "Invalid payment details. Please check and try again.";
+      errorCode = "BAD_REQUEST_ERROR";
+    } else if (razorpayApiError.statusCode === 401) {
+      errorMessage =
+        "Payment service authentication failed. Please contact support.";
+      errorCode = "AUTHENTICATION_ERROR";
     }
-  } catch (error) {
-    console.error("❌ Unexpected error creating order:", error);
-    console.error("Error stack:", error.stack);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: "Failed to create order. Please try again.",
-      code: "ORDER_CREATION_FAILED",
-      ...(currentConfig?.enableDebug && {
-        details: error.message,
-      }),
+      error: errorMessage,
+      code: errorCode,
     });
   }
 });

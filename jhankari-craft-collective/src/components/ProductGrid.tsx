@@ -193,13 +193,13 @@ const ProductGrid = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
         </div>
 
         {/* Debug Info */}
-        <div className="mb-4 p-4 bg-muted/50 rounded-lg">
+        {/* <div className="mb-4 p-4 bg-muted/50 rounded-lg">
           <p className="text-sm text-muted-foreground">
             Debug: {products.length} products loaded, {selectedProducts.size} selected
           </p>
-        </div>
+        </div> */}
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-between items-center mb-6">
+        {/* <div className="flex flex-col sm:flex-row gap-4 justify-between items-center mb-6">
           <div className="flex items-center gap-4">
             <Button 
               variant="outline" 
@@ -230,7 +230,7 @@ const ProductGrid = ({ onCartUpdate }: { onCartUpdate?: () => void }) => {
               {addingToCart ? 'Adding...' : `Add ${selectedProducts.size} items to Cart`}
             </Button>
           )}
-        </div>
+        </div> */}
 
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-center mb-8">
           <div className="flex gap-2 flex-wrap">

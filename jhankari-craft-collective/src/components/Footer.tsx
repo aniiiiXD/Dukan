@@ -20,9 +20,25 @@ const Footer = () => {
               {/* <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Facebook className="h-5 w-5" />
               </Button> */}
-              <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
+              {/* <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Instagram className="h-5 w-5" />
+              </Button> */}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10"
+                asChild
+              >
+                <a 
+                  href="https://www.instagram.com/royal_jhankari/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  aria-label="Follow us on Instagram"
+                >
+                  <Instagram className="h-5 w-5" />
+                </a>
               </Button>
+
               {/* <Button variant="ghost" size="icon" className="text-royal-cream hover:text-royal-gold hover:bg-royal-cream/10">
                 <Twitter className="h-5 w-5" />
               </Button> */}
