@@ -1,3 +1,4 @@
+// src/components/CheckoutForm.tsx
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
@@ -15,6 +16,10 @@ interface CheckoutFormProps {
   onOrderComplete: (orderId: string) => void
   onBack: () => void
 }
+
+const razorpayKeyFromEnv = import.meta.env.VITE_RAZORPAY_KEY;
+console.log("Frontend env Razorpay Key:", razorpayKeyFromEnv);
+
 
 const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
   const { user } = useAuth()
@@ -53,7 +58,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
     if (missing.length > 0) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: `Please fill in: ${missing.join(', ')}`,
         variant: "destructive"
       })
       return false
@@ -88,6 +93,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
     e.preventDefault()
     
     if (!validateForm()) return
+    
     if (items.length === 0) {
       toast({
         title: "Empty Cart",
@@ -105,7 +111,8 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
         items: items.map(item => ({
           productId: item.id,
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          name: item.name
         })),
         billingAddress: {
           firstName: formData.firstName,
@@ -139,13 +146,25 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
 
       console.log('🛒 Creating order:', orderData)
 
-      // Create order with payment integration
+      // Create order with backend
       const response = await apiClient.post('/orders', orderData)
 
+      console.log('📦 Order response:', response.data)
+
       if (response.data.success) {
+        // Check if we have valid Razorpay data
+        if (!response.data.key_id || !response.data.razorpay_order_id) {
+          throw new Error('Invalid order response from server')
+        }
+
+        // Log the key to verify it's live
+        console.log('🔑 Razorpay Key ID received:', response.data.key_id)
+        console.log('📋 Razorpay Order ID:', response.data.razorpay_order_id)
+
         // Initialize Razorpay payment
         const options = {
-          key: response.data.key_id,
+          // key: razorpayKeyFromEnv || response.data.key_id,
+          key: response.data.key_id, // This should now be live key from backend
           amount: response.data.amount,
           currency: response.data.currency || 'INR',
           name: 'Jhankari Craft Collective',
@@ -160,10 +179,12 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
             color: '#8B5CF6'
           },
           handler: async (paymentResponse: any) => {
+            console.log('✅ Payment successful:', paymentResponse)
             await verifyPayment(paymentResponse)
           },
           modal: {
             ondismiss: () => {
+              setLoading(false)
               toast({
                 title: "Payment Cancelled",
                 description: "Your order has been saved. Complete payment to confirm.",
@@ -173,46 +194,67 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
           }
         }
 
-        if (window.Razorpay) {
+        console.log('🎯 Razorpay options:', {
+          key: options.key,
+          amount: options.amount,
+          currency: options.currency,
+          order_id: options.order_id
+        })
+
+        // Check if Razorpay is loaded
+        if (typeof window !== 'undefined' && window.Razorpay) {
           const razorpay = new window.Razorpay(options)
           razorpay.open()
         } else {
-          throw new Error('Payment gateway not loaded')
+          throw new Error('Razorpay payment gateway not loaded. Please refresh the page.')
         }
+      } else {
+        throw new Error(response.data.error || 'Failed to create order')
       }
     } catch (error: any) {
-      console.error('Order creation failed:', error)
+      console.error('❌ Order creation failed:', error)
+      setLoading(false)
+      
       toast({
         title: "Order Failed",
-        description: error.response?.data?.error || "Failed to create order. Please try again.",
+        description: error.response?.data?.error || error.message || "Failed to create order. Please try again.",
         variant: "destructive"
       })
-    } finally {
-      setLoading(false)
     }
   }
 
   const verifyPayment = async (paymentResponse: any) => {
     try {
+      console.log('🔐 Verifying payment:', paymentResponse)
+
       const response = await apiClient.put('/orders', {
         razorpay_order_id: paymentResponse.razorpay_order_id,
         razorpay_payment_id: paymentResponse.razorpay_payment_id,
         razorpay_signature: paymentResponse.razorpay_signature
       })
 
+      console.log('✅ Payment verification response:', response.data)
+
       if (response.data.success) {
         clearCart()
+        setLoading(false)
+        
         toast({
-          title: "Payment Successful!",
-          description: "Your order has been placed successfully."
+          title: "Payment Successful! 🎉",
+          description: "Your order has been placed successfully. You will receive a confirmation email shortly."
         })
+        
         onOrderComplete(response.data.order.id)
+      } else {
+        throw new Error(response.data.error || 'Payment verification failed')
       }
-    } catch (error) {
-      console.error('Payment verification failed:', error)
+    } catch (error: any) {
+      console.error('❌ Payment verification failed:', error)
+      setLoading(false)
+      
       toast({
         title: "Payment Verification Failed",
-        description: "Please contact support for assistance.",
+        description: error.response?.data?.error || "Please contact support for assistance.",
         variant: "destructive"
       })
     }
@@ -230,13 +272,14 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                 size="sm"
                 onClick={onBack}
                 className="h-8"
+                disabled={loading}
               >
                 <ArrowLeft className="h-4 w-4 mr-1" />
                 Back
               </Button>
               <div>
-                <h1 className="text-xl font-bold text-gray-800">Checkout</h1>
-                <p className="text-sm text-gray-600">Complete your secure purchase</p>
+                <h1 className="text-xl font-bold text-gray-800">Secure Checkout</h1>
+                <p className="text-sm text-gray-600">Complete your purchase safely</p>
               </div>
             </div>
             
@@ -260,7 +303,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
               {/* Form Section */}
               <div className="space-y-4">
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Personal Information - Ultra Compact */}
+                  {/* Personal Information */}
                   <Card className="bg-white border shadow-sm">
                     <CardHeader className="pb-2">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -278,6 +321,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             value={formData.firstName}
                             onChange={handleInputChange}
                             className="h-8 text-sm"
+                            disabled={loading}
                             required
                           />
                         </div>
@@ -289,6 +333,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             value={formData.lastName}
                             onChange={handleInputChange}
                             className="h-8 text-sm"
+                            disabled={loading}
                             required
                           />
                         </div>
@@ -302,6 +347,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                           value={formData.email}
                           onChange={handleInputChange}
                           className="h-8 text-sm"
+                          disabled={loading}
                           required
                         />
                       </div>
@@ -315,13 +361,14 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                           onChange={handleInputChange}
                           placeholder="10-digit number"
                           className="h-8 text-sm"
+                          disabled={loading}
                           required
                         />
                       </div>
                     </CardContent>
                   </Card>
 
-                  {/* Shipping Address - Ultra Compact */}
+                  {/* Shipping Address */}
                   <Card className="bg-white border shadow-sm">
                     <CardHeader className="pb-2">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -339,6 +386,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                           onChange={handleInputChange}
                           placeholder="House no., Street name"
                           className="h-8 text-sm"
+                          disabled={loading}
                           required
                         />
                       </div>
@@ -349,6 +397,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                           onChange={handleInputChange}
                           placeholder="Apartment, suite (optional)"
                           className="h-8 text-sm"
+                          disabled={loading}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -360,6 +409,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             value={formData.city}
                             onChange={handleInputChange}
                             className="h-8 text-sm"
+                            disabled={loading}
                             required
                           />
                         </div>
@@ -371,6 +421,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             value={formData.state}
                             onChange={handleInputChange}
                             className="h-8 text-sm"
+                            disabled={loading}
                             required
                           />
                         </div>
@@ -385,6 +436,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             onChange={handleInputChange}
                             placeholder="6 digits"
                             className="h-8 text-sm"
+                            disabled={loading}
                             required
                           />
                         </div>
@@ -402,7 +454,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                     </CardContent>
                   </Card>
 
-                  {/* Order Notes - Minimal */}
+                  {/* Order Notes */}
                   <Card className="bg-white border shadow-sm">
                     <CardHeader className="pb-2">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -418,13 +470,14 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                         placeholder="Special instructions (optional)"
                         rows={2}
                         className="resize-none text-sm"
+                        disabled={loading}
                       />
                     </CardContent>
                   </Card>
                 </form>
               </div>
 
-              {/* Order Summary - Fixed Height */}
+              {/* Order Summary */}
               <div>
                 <Card className="bg-white border shadow-sm">
                   <CardHeader className="pb-2">
@@ -434,7 +487,7 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4 pt-0">
-                    {/* Cart Items - Fixed Height */}
+                    {/* Cart Items */}
                     <div className="space-y-2 max-h-32 overflow-y-auto">
                       {items.map((item) => (
                         <div key={item.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
@@ -447,7 +500,9 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                             <p className="font-medium text-xs truncate">{item.name}</p>
                             <p className="text-xs text-gray-600">Qty: {item.quantity}</p>
                           </div>
-                          <p className="font-semibold text-royal-crimson text-xs">₹{(item.price * item.quantity).toLocaleString('en-IN')}</p>
+                          <p className="font-semibold text-royal-crimson text-xs">
+                            ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -480,18 +535,18 @@ const CheckoutForm = ({ onOrderComplete, onBack }: CheckoutFormProps) => {
                       {loading ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                          Processing...
+                          Processing Payment...
                         </>
                       ) : (
                         <>
                           <CreditCard className="h-4 w-4 mr-2" />
-                          Place Order (₹{totalPrice.toLocaleString('en-IN')})
+                          Pay ₹{totalPrice.toLocaleString('en-IN')} Securely
                         </>
                       )}
                     </Button>
 
                     <p className="text-xs text-gray-500 text-center">
-                      🔒 Secure payment with 256-bit encryption
+                      🔒 256-bit SSL encrypted payment • Live Razorpay Gateway
                     </p>
                   </CardContent>
                 </Card>

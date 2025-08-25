@@ -1,17 +1,20 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "rewrites": [
+  "builds": [
     {
-      "source": "/health",
-      "destination": "/"
-    },
+      "src": "index.js",
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 30
+      }
+    }
+  ],
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": "/"
-    },
-    {
-      "source": "/",
-      "destination": "/"
+      "src": "/(.*)",
+      "dest": "index.js"
     }
   ]
 }
+

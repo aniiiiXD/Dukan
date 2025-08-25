@@ -4,9 +4,14 @@
 const express = require("express");
 const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
+require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
 
+{
+  /*
 // ==========================================
 // ENVIRONMENT CONFIGURATION
 // ==========================================
@@ -58,6 +63,39 @@ const loadEnvironmentVariables = () => {
 };
 
 loadEnvironmentVariables();
+*/
+}
+
+// ==========================================
+// ENVIRONMENT CONFIGURATION
+// ==========================================
+const NODE_ENV = process.env.NODE_ENV || "development";
+
+// Simplified environment loading for Vercel
+console.log(`🔍 Starting Jhankari backend in ${NODE_ENV} mode...`);
+console.log("🔍 Environment Variables Check:");
+console.log("NODE_ENV:", process.env.NODE_ENV || "Not Set");
+console.log("PORT:", process.env.PORT || "Not Set");
+console.log(
+  "SUPABASE_URL:",
+  process.env.SUPABASE_URL ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "SUPABASE_SERVICE_ROLE_KEY:",
+  process.env.SUPABASE_SERVICE_ROLE_KEY ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "SUPABASE_ANON_KEY:",
+  process.env.SUPABASE_ANON_KEY ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "RAZORPAY_KEY_ID:",
+  process.env.RAZORPAY_KEY_ID ? "Set ✅" : "Missing ❌"
+);
+console.log(
+  "RAZORPAY_KEY_SECRET:",
+  process.env.RAZORPAY_KEY_SECRET ? "Set ✅" : "Missing ❌"
+);
 
 // ==========================================
 // CONFIGURATION SETTINGS
@@ -100,6 +138,8 @@ const validateEnvironment = () => {
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
+    "RAZORPAY_KEY_ID",
+    "RAZORPAY_KEY_SECRET",
   ];
 
   const missingVars = requiredEnvVars.filter(
@@ -127,20 +167,30 @@ validateEnvironment();
 const initializeDatabase = () => {
   const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY, // This should bypass RLS
     {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
       },
-      db: {
-        schema: "public",
-      },
-      global: {
-        headers: { "x-application-name": "jhankari-backend" },
-      },
     }
   );
+  // const supabase = createClient(
+  //   process.env.SUPABASE_URL,
+  //   process.env.SUPABASE_SERVICE_ROLE_KEY,
+  //   {
+  //     auth: {
+  //       autoRefreshToken: false,
+  //       persistSession: false,
+  //     },
+  //     db: {
+  //       schema: "public",
+  //     },
+  //     global: {
+  //       headers: { "x-application-name": "jhankari-backend" },
+  //     },
+  //   }
+  // );
 
   console.log(`✅ Supabase client initialized for ${NODE_ENV}`);
   return supabase;
@@ -164,7 +214,8 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // ==========================================
 // CORS CONFIGURATION
 // ==========================================
-
+{
+  /*
 // Define allowed origins based on environment
 const allowedOrigins =
   NODE_ENV === "production"
@@ -175,6 +226,24 @@ const allowedOrigins =
         // "https://server2-r3qc00jy6-princes-projects-53a1e3ae.vercel.app/",
         "https://api.jhankari.com",
       ]
+    : [
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8080",
+      ];
+ */
+}
+// Define allowed origins based on environment
+const allowedOrigins =
+  NODE_ENV === "production"
+    ? [
+        "https://jhankari.com",
+        "https://www.jhankari.com",
+        "https://jhankari-frontend.vercel.app",
+        process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+      ].filter(Boolean)
     : [
         "http://localhost:5173",
         "http://localhost:8080",
@@ -635,6 +704,7 @@ app.get("/health", async (req, res) => {
     version: "1.0.0",
     debug: currentConfig.enableDebug,
     uptime: process.uptime(),
+    razorpay: "configured",
   });
 });
 
@@ -1016,8 +1086,9 @@ app.get("/api/v1/cart/:userId", async (req, res) => {
 // ==========================================
 
 // Orders endpoint for payment integration (POST /api/v1/orders)
+// Create Razorpay Order Endpoint
 app.post("/api/v1/orders", async (req, res) => {
-  console.log("🎯 Creating order with payment integration");
+  console.log("🛒 Creating order with payment integration:", req.body);
 
   try {
     const {
@@ -1029,168 +1100,214 @@ app.post("/api/v1/orders", async (req, res) => {
       totalAmount,
     } = req.body;
 
-    // Enhanced validation
+    // Validate required fields
     if (!billingAddress || !phoneNumber || !email || !items || !totalAmount) {
-      console.log("❌ Missing required fields");
       return res.status(400).json({
         success: false,
-        error: "Missing required fields",
-        details:
-          "billingAddress, phoneNumber, email, items, and totalAmount are required",
-        code: "VALIDATION_ERROR",
+        error:
+          "Missing required fields: billingAddress, phoneNumber, email, items, totalAmount",
       });
     }
 
-    // Validate amount
-    const amountInPaise = Math.round(totalAmount * 100);
-    if (amountInPaise < 100) {
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        error: "Minimum order amount should be ₹1.00",
-        code: "INVALID_AMOUNT",
+        error: "Items must be a non-empty array",
       });
     }
 
-    // Check Razorpay configuration
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.log("🧪 Creating test order (Razorpay not configured)");
-
-      const mockOrderId = `test_order_${Date.now()}`;
-      return res.json({
-        success: true,
-        razorpay_order_id: mockOrderId,
-        amount: amountInPaise,
-        currency: "INR",
-        key_id: "test_key_id",
-        test_mode: true,
-      });
-    }
-
-    // Initialize Razorpay with enhanced error handling
-    const Razorpay = require("razorpay");
-    let razorpay;
-
-    try {
-      razorpay = new Razorpay({
-        key_id: process.env.RAZORPAY_KEY_ID.trim(),
-        key_secret: process.env.RAZORPAY_KEY_SECRET.trim(),
-      });
-      console.log("✅ Razorpay instance created successfully");
-    } catch (razorpayInitError) {
-      console.error("❌ Razorpay initialization failed:", razorpayInitError);
-      return res.status(500).json({
+    // Validate totalAmount
+    if (typeof totalAmount !== "number" || totalAmount <= 0) {
+      return res.status(400).json({
         success: false,
-        error: "Payment service initialization failed",
-        code: "RAZORPAY_INIT_ERROR",
+        error: "Total amount must be a positive number",
       });
     }
+
+    console.log("✅ All validations passed");
+    console.log("💰 Total Amount:", totalAmount);
+    console.log("🔑 Using Razorpay Key:", process.env.RAZORPAY_KEY_ID);
 
     // Create Razorpay order
-    const razorpayOrder = await razorpay.orders.create({
-      amount: amountInPaise,
+    const razorpayOrderOptions = {
+      amount: Math.round(totalAmount * 100), // Amount in paise
       currency: "INR",
-      receipt: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      receipt: `order_${Date.now()}`,
       notes: {
         customer_email: email,
         customer_phone: phoneNumber,
-        billing_city: billingAddress.city || "Not provided",
-        shipping_city: shippingAddress.city || "Not provided",
-        items_count: items.length.toString(),
+        billing_city: billingAddress.city || "N/A",
+        shipping_city: shippingAddress?.city || billingAddress.city || "N/A",
+        items_count: items.length,
       },
+    };
+
+    console.log(
+      "📋 Creating Razorpay order with options:",
+      razorpayOrderOptions
+    );
+
+    const razorpayOrder = await razorpay.orders.create(razorpayOrderOptions);
+
+    console.log("✅ Razorpay order created successfully:", {
+      id: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      status: razorpayOrder.status,
     });
 
-    console.log("✅ Razorpay order created:", razorpayOrder.id);
+    // Store order in database
+    const orderData = {
+      razorpay_order_id: razorpayOrder.id,
+      customer_email: email,
+      customer_phone: phoneNumber,
+      billing_address: JSON.stringify(billingAddress),
+      shipping_address: JSON.stringify(shippingAddress || billingAddress),
+      items: JSON.stringify(items),
+      total_amount: totalAmount,
+      subtotal: totalAmount,
+      payment_method: "razorpay",
+      status: "pending",
+      payment_status: "pending",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-    // TODO: Store order in database
+    // 🔍 ENHANCED DEBUGGING - Log everything before insert
+    console.log("📋 About to insert order data:");
+    console.log(
+      "🔑 Using service role key:",
+      process.env.SUPABASE_SERVICE_ROLE_KEY ? "YES" : "NO"
+    );
+    console.log("📊 Order data structure:", Object.keys(orderData));
+    console.log("🎯 Database client info:", supabase.supabaseUrl);
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert(orderData)
+      .select()
+      .single();
+
+    if (orderError) {
+      // 🔍 DETAILED ERROR LOGGING
+      console.error("❌ Database insert failed:");
+      console.error("❌ Error code:", orderError.code);
+      console.error("❌ Error message:", orderError.message);
+      console.error("❌ Error details:", orderError.details);
+      console.error("❌ Error hint:", orderError.hint);
+      console.error(
+        "❌ Full error object:",
+        JSON.stringify(orderError, null, 2)
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: "Failed to create order in database",
+        details: orderError.message,
+        errorCode: orderError.code,
+        hint: orderError.hint,
+      });
+    }
+
+    console.log("✅ Order stored in database:", order.id);
+    console.log("🎯 Order data for verification:", {
+      razorpay_order_id: order.razorpay_order_id,
+      customer_email: order.customer_email,
+      total_amount: order.total_amount,
+    });
+
+    // Return order details to frontend
     res.json({
       success: true,
+      order: order,
       razorpay_order_id: razorpayOrder.id,
       amount: razorpayOrder.amount,
       currency: razorpayOrder.currency,
-      key_id: process.env.RAZORPAY_KEY_ID,
+      key_id: process.env.RAZORPAY_KEY_ID, // Send live key to frontend
     });
-  } catch (razorpayApiError) {
-    console.error("❌ Razorpay API error:", razorpayApiError);
+  } catch (error) {
+    // 🔍 CATCH-ALL ERROR LOGGING
+    console.error("❌ Unexpected error in order creation:");
+    console.error("❌ Error type:", error.constructor.name);
+    console.error("❌ Error message:", error.message);
+    console.error("❌ Error stack:", error.stack);
 
-    let errorMessage =
-      "Payment service temporarily unavailable. Please try again.";
-    let errorCode = "RAZORPAY_API_ERROR";
-
-    if (razorpayApiError.statusCode === 400) {
-      errorMessage = "Invalid payment details. Please check and try again.";
-      errorCode = "BAD_REQUEST_ERROR";
-    } else if (razorpayApiError.statusCode === 401) {
-      errorMessage =
-        "Payment service authentication failed. Please contact support.";
-      errorCode = "AUTHENTICATION_ERROR";
-    }
-
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      error: errorMessage,
-      code: errorCode,
+      error: "Failed to create order",
+      details: error.message,
     });
   }
 });
 
+// Verify Razorpay Payment Endpoint
 app.put("/api/v1/orders", async (req, res) => {
-  console.log("🔐 Verifying payment");
+  console.log("🔐 Verifying payment:", req.body);
 
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;
 
-    if (razorpay_order_id.startsWith("test_order_")) {
-      console.log("🧪 Test payment verification - auto approving");
-
-      const paymentData = {
-        payment_status: "paid",
-        status: "confirmed",
-        paid_at: new Date().toISOString(),
-      };
-
-      const updatedOrder = await updateOrderPaymentStatus(
-        razorpay_order_id,
-        paymentData
-      );
-
-      return res.json({
-        success: true,
-        message: "Test payment verified successfully",
-        order: updatedOrder,
-        test_mode: true,
-      });
-    }
-
-    const isValidSignature = verifyPaymentSignature(
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature
-    );
-
-    if (!isValidSignature) {
-      console.log("❌ Payment signature verification failed");
+    // Validate required fields
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      console.error("❌ Missing payment verification parameters");
       return res.status(400).json({
         success: false,
-        error: "Payment verification failed",
-        code: "PAYMENT_VERIFICATION_FAILED",
+        error: "Missing payment verification parameters",
       });
     }
 
-    console.log("✅ Payment verified successfully");
+    console.log("🔍 Verifying signature for order:", razorpay_order_id);
+    console.log("🔍 Payment ID:", razorpay_payment_id);
 
-    const paymentData = {
-      razorpay_payment_id: razorpay_payment_id,
-      payment_signature: razorpay_signature,
-      status: "confirmed",
-      payment_status: "paid",
-      paid_at: new Date().toISOString(),
-    };
+    // Verify payment signature using crypto
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
 
-    const updatedOrder = await updateOrderPaymentStatus(
-      razorpay_order_id,
-      paymentData
-    );
+    console.log("🔍 Expected signature:", expectedSignature);
+    console.log("🔍 Received signature:", razorpay_signature);
+
+    if (expectedSignature !== razorpay_signature) {
+      console.error("❌ Payment signature verification failed");
+      return res.status(400).json({
+        success: false,
+        error: "Payment verification failed - invalid signature",
+      });
+    }
+
+    console.log("✅ Payment signature verified successfully");
+
+    // Update order status in database
+    const { data: updatedOrder, error } = await supabase
+      .from("orders")
+      .update({
+        razorpay_payment_id: razorpay_payment_id,
+        payment_signature: razorpay_signature,
+        status: "paid",
+        payment_status: "paid",
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("razorpay_order_id", razorpay_order_id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ Database update error:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to update order status",
+        details: error.message,
+      });
+    }
+
+    console.log("✅ Order updated successfully:", updatedOrder.id);
+
+    // Clear user's cart after successful payment (optional)
+    // You can add cart clearing logic here if needed
 
     res.json({
       success: true,
@@ -1201,8 +1318,8 @@ app.put("/api/v1/orders", async (req, res) => {
     console.error("❌ Payment verification error:", error);
     res.status(500).json({
       success: false,
-      error: "Internal server error",
-      code: "PAYMENT_VERIFICATION_ERROR",
+      error: "Internal server error during payment verification",
+      details: error.message,
     });
   }
 });
@@ -1314,26 +1431,30 @@ process.on("SIGINT", () => {
 // SERVER STARTUP
 // ==========================================
 
-app.listen(PORT, async () => {
-  console.log(`🚀 Jhankari E-commerce API started`);
-  console.log(`🌐 Environment: ${NODE_ENV}`);
-  console.log(`📡 Port: ${PORT}`);
-  console.log(
-    `🔗 API Base: ${
-      NODE_ENV === "production"
-        ? "https://api.jhankari.com"
-        : `http://localhost:${PORT}`
-    }`
-  );
-  console.log(`🛡️ CORS Origins: ${currentConfig.corsOrigins.join(", ")}`);
-  console.log(`💳 Razorpay Status: ${razorpay ? "Enabled" : "Test Mode"}`);
+if (process.env.NODE_ENV !== "production") {
+  // Only start server in development
+  app.listen(PORT, async () => {
+    console.log(`🚀 Jhankari E-commerce API started`);
+    console.log(`🌐 Environment: ${NODE_ENV}`);
+    console.log(`📡 Port: ${PORT}`);
+    console.log(`🔗 API Base: http://localhost:${PORT}`);
+    console.log(`🛡️ CORS Origins: ${allowedOrigins.join(", ")}`);
+    console.log(`💳 Razorpay Status: ${razorpay ? "Enabled" : "Test Mode"}`);
 
-  const dbConnected = await testDatabase();
-  if (dbConnected) {
-    console.log(`🎉 All systems operational in ${NODE_ENV} mode!`);
-  } else {
-    console.error("⚠️ Database connection issues - Check configuration");
-  }
-});
+    const dbConnected = await testDatabase();
+    if (dbConnected) {
+      console.log(`🎉 All systems operational in ${NODE_ENV} mode!`);
+    } else {
+      console.error("⚠️ Database connection issues - Check configuration");
+    }
+  });
+}
+
+// For Vercel deployment, we just export the app
+console.log(`🚀 Jhankari API configured for ${NODE_ENV} mode`);
+console.log(`🛡️ CORS Origins: ${allowedOrigins.join(", ")}`);
 
 module.exports = app;
+
+// Export for Vercel
+// module.exports.default = app;
